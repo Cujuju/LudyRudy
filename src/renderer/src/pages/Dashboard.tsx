@@ -1,12 +1,15 @@
 import { createSignal, For, Show, untrack } from 'solid-js';
-import { Activity, Cloud, HardDrive, LockKeyhole, RefreshCw, Server } from 'lucide-solid';
+import { Activity, Cloud, HardDrive, LockKeyhole, Plus, RefreshCw, Server } from 'lucide-solid';
 import type { RemoteQuota, RemoteSummary } from '@shared/types';
 import { MountDrawer } from '../components/MountDrawer';
 import { MountLedger, Prerequisites } from '../components/MountLedger';
 import { Quota } from '../components/Quota';
+import { RemoteDrawer } from '../components/RemoteDrawer';
+import { SetupGuide } from '../components/SetupGuide';
 import { Empty, Feedback, PageHeader, SectionHeader, sentenceCase, StatusDot } from '../components/ui';
 import { useAction } from '../lib/actions';
 import { formatBytes, formatSpeed, formatTime } from '../lib/format';
+import { daemonSourceLabel } from '../lib/onboarding';
 import { providerName } from '../lib/remotes';
 import type { PageProps } from '../store';
 
@@ -15,26 +18,32 @@ function Telemetry(props: PageProps) {
   const stats = () => props.store.snapshot()?.stats;
   const action = useAction();
   const busy = () => daemon()?.state === 'starting' || action.pending();
+  const source = () => {
+    const current = daemon();
+    return current ? daemonSourceLabel(current) : 'rclone engine';
+  };
   return (
     <div class="telemetry">
       <div class="telemetry-metrics">
         <div class="telemetry-unit">
           <Server size={19} />
-          <div><strong class="row"><StatusDot state={daemon()?.state ?? 'stopped'} />{sentenceCase(daemon()?.state ?? 'stopped')}</strong>
-            <span>{daemon()?.mode === 'attached' ? 'Attached' : 'Managed'}{daemon()?.version ? ` / ${daemon()?.version}` : ''}</span></div>
+          <div><strong class="row"><StatusDot state={daemon()?.state ?? 'stopped'} />rclone {daemon()?.state ?? 'stopped'}</strong>
+            <span>{source()}</span></div>
         </div>
         <div class="telemetry-unit"><Activity size={19} /><div><strong>{formatSpeed(stats()?.speed ?? null)}</strong>
           <span>{stats()?.transferring.length ?? 0} active / {formatBytes(stats()?.bytes ?? null)} transferred</span></div></div>
         <div class="telemetry-unit"><span class="chip">Bandwidth cap: {stats()?.bwLimit ?? 'off'}</span></div>
       </div>
       <div class="actions telemetry-actions">
-        <Show when={daemon()?.state !== 'running'}>
+        <Show when={daemon()?.state !== 'running' && daemon()?.mode !== 'attached'}>
           <button class="button" type="button" disabled={busy()} onClick={() => void action.run(window.api.startDaemon)}>Start</button>
         </Show>
         <Show when={daemon()?.state === 'running'}>
           <button class="button" type="button" disabled={busy()} onClick={() => void action.run(window.api.stopDaemon)}>Stop</button>
         </Show>
-        <button class="button" type="button" disabled={busy()} onClick={() => void action.run(window.api.restartDaemon)}>Restart</button>
+        <button class="button" type="button" disabled={busy()} onClick={() => void action.run(window.api.restartDaemon)}>
+          {daemon()?.mode === 'attached' && daemon()?.state !== 'running' ? 'Reconnect' : 'Restart'}
+        </button>
       </div>
       <Show when={daemon()?.error && !action.error()}>{(error) => <p class="banner error" role="alert">{error()}</p>}</Show>
       <Feedback action={action} />
@@ -67,8 +76,9 @@ function StorageRow(props: { remote: RemoteSummary }) {
 }
 
 export function Dashboard(props: PageProps) {
-  const [mount, setMount] = createSignal(false);
+  const [drawer, setDrawer] = createSignal<'mount' | 'remote'>();
   const remotes = () => props.store.snapshot()?.remotes ?? [];
+  const connected = () => props.store.snapshot()?.daemon.state === 'running';
   const transfers = () => props.store.snapshot()?.stats?.transferring ?? [];
   const runs = () => props.store.snapshot()?.jobRuns.slice(0, 3);
   return (
@@ -77,14 +87,22 @@ export function Dashboard(props: PageProps) {
         <button type="button" class="button" disabled={props.store.refreshing()} onClick={() => void props.store.refresh()}><RefreshCw size={15} /> Refresh</button>
       </PageHeader>
       <Telemetry store={props.store} navigate={props.navigate} />
+      <SetupGuide store={props.store} navigate={props.navigate} addRemote={() => setDrawer('remote')} />
       <Prerequisites store={props.store} navigate={props.navigate} />
-      <MountLedger store={props.store} navigate={props.navigate} add={() => setMount(true)} />
+      <MountLedger store={props.store} navigate={props.navigate} add={() => setDrawer('mount')} />
       <div class="dashboard-split">
         <section class="panel">
           <SectionHeader title="Remotes and storage">
             <button type="button" class="text-button" onClick={() => props.navigate('Remotes')}>View remotes</button>
           </SectionHeader>
-          <For each={remotes().map(({ name }) => name)} fallback={<Empty>No connected remotes.</Empty>}>{(name) => (
+          <For each={remotes().map(({ name }) => name)} fallback={
+            <Show when={connected()} fallback={<Empty>Connect to rclone to see configured remotes.</Empty>}>
+              <div class="empty-action">
+                <span>{props.store.snapshot()?.dataError ? 'Remote status is temporarily unavailable.' : 'No remotes connected yet.'}</span>
+                <button type="button" class="button" onClick={() => setDrawer('remote')}><Plus size={14} /> Add remote</button>
+              </div>
+            </Show>
+          }>{(name) => (
             <StorageRow remote={remotes().find((remote) => remote.name === name)!} />
           )}</For>
         </section>
@@ -101,8 +119,9 @@ export function Dashboard(props: PageProps) {
           )}</For>
         </section>
       </div>
-      <Show when={mount()}><MountDrawer remotes={remotes()} cache={props.store.settings().daemon.defaultVfsCacheMode}
-        connected={props.store.snapshot()?.daemon.state === 'running'} close={() => setMount(false)} /></Show>
+      <Show when={drawer() === 'mount'}><MountDrawer remotes={remotes()} cache={props.store.settings().daemon.defaultVfsCacheMode}
+        connected={connected()} close={() => setDrawer(undefined)} /></Show>
+      <Show when={drawer() === 'remote'}><RemoteDrawer store={props.store} close={() => setDrawer(undefined)} /></Show>
     </>
   );
 }

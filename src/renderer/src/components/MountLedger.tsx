@@ -108,13 +108,21 @@ function MountRow(props: MountProps & { profile?: MountProfile; external?: Activ
 
 export function MountLedger(props: MountProps) {
   const external = () => props.store.snapshot()?.mounts.filter(({ profileId }) => !profileId) ?? [];
+  const connected = () => props.store.snapshot()?.daemon.state === 'running';
+  const dataError = () => !!props.store.snapshot()?.dataError;
+  const hasRemotes = () => (props.store.snapshot()?.remotes.length ?? 0) > 0;
+  const emptyRemotes = () => connected() && !dataError() && !hasRemotes();
   return (
     <>
       <section class="panel">
         <SectionHeader title={props.detailed ? 'Saved mount profiles' : 'Active drive bay'}>
-          <button type="button" class="button primary" onClick={() => props.add()}><Plus size={15} />{props.detailed ? 'New mount profile' : 'New mount'}</button>
+          <button type="button" class="button primary" disabled={!hasRemotes()}
+            title={hasRemotes() ? undefined : emptyRemotes() ? 'Connect a remote first.' : dataError() ? 'Remote list could not be verified.' : 'Connect to rclone first.'}
+            onClick={() => props.add()}><Plus size={15} />{props.detailed ? 'New mount profile' : 'New mount'}</button>
         </SectionHeader>
-        <For each={props.store.settings().mounts.map(({ id }) => id)} fallback={<Empty>No saved mount profiles.</Empty>}>{(id) => (
+        <For each={props.store.settings().mounts.map(({ id }) => id)} fallback={<Empty>
+          {emptyRemotes() ? 'Connect a remote before creating a mount profile.' : connected() && dataError() && !hasRemotes() ? 'Some rclone data could not be loaded.' : 'No saved mount profiles.'}
+        </Empty>}>{(id) => (
           <MountRow store={props.store} navigate={props.navigate} detailed={props.detailed} edit={props.edit} add={props.add}
             profile={props.store.settings().mounts.find((profile) => profile.id === id)} />
         )}</For>
