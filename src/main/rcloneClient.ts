@@ -56,6 +56,7 @@ interface RcMethods {
   'operations/purge': [RcFile, RcResult];
   'operations/copyfile': [RcCopyFile, RcResult];
   'operations/movefile': [RcCopyFile, RcResult];
+  'sync/move': [{ srcFs: string; dstFs: string; createEmptySrcDirs: boolean; deleteEmptySrcDirs: boolean }, RcResult];
   'sync/copy': [RcSync, { jobid: number; executeId?: string }];
   'sync/sync': [RcSync, { jobid: number; executeId?: string }];
   'job/list': [NoParams, { jobids: number[]; executeId?: string }];
@@ -65,7 +66,7 @@ interface RcMethods {
 
 const REQUEST_TIMEOUT_MS = 5_000;
 const FILE_MUTATION_TIMEOUT_MS = 30 * 60_000;
-const FILE_MUTATIONS = new Set<keyof RcMethods>(['operations/copyfile', 'operations/movefile', 'operations/purge']);
+const FILE_MUTATIONS = new Set<keyof RcMethods>(['sync/move', 'operations/copyfile', 'operations/movefile', 'operations/purge']);
 const MOUNT_TIMEOUT_MS = 60_000;
 const SAFE_CONFIG_KEYS = ['type', 'provider', 'region', 'filename_encryption', 'directory_name_encryption'];
 const REMOTE_NAME = '[\\p{L}\\p{N}_.+@]+(?:[ -]+[\\p{L}\\p{N}_.+@-]+)*';

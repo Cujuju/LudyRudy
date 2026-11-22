@@ -1,29 +1,81 @@
-import { For, Show } from 'solid-js';
-import { Cloud, LockKeyhole } from 'lucide-solid';
-import { Empty, PageHeader } from '../components/ui';
+import { createSignal, For, Show, untrack } from 'solid-js';
+import { Cloud, LockKeyhole, Plus } from 'lucide-solid';
+import type { RemoteSummary } from '@shared/types';
+import { CryptDrawer } from '../components/CryptDrawer';
+import { MountDrawer } from '../components/MountDrawer';
+import { RemoteDrawer } from '../components/RemoteDrawer';
+import { Confirm, Empty, Feedback, PageHeader, SectionHeader } from '../components/ui';
+import { VolumeConduit } from '../components/VolumeConduit';
+import { providerName } from '../lib/remotes';
+import { useAction } from '../lib/actions';
 import type { PageProps } from '../store';
 
+type DrawerState = { kind: 'add' } | { kind: 'edit'; remote: RemoteSummary } | { kind: 'crypt'; target?: string } | { kind: 'mount'; remote: string };
+
+function RemoteRow(props: PageProps & { remote: RemoteSummary; open: (drawer: DrawerState) => void }) {
+  const action = useAction();
+  const name = () => props.remote.name;
+  return (
+    <article class="ledger-row" classList={{ 'direct-remote': !props.remote.isCrypt }}>
+      <div class="ledger-heading">
+        <div class="row">
+          <Show when={props.remote.isCrypt} fallback={<Cloud size={17} />}><LockKeyhole size={17} /></Show>
+          <strong>{name()}</strong><span class="chip" classList={{ encrypted: props.remote.isCrypt }}>
+            {props.remote.isCrypt ? 'Encrypted' : providerName(props.remote.type)}</span>
+        </div>
+        <Show when={props.remote.isCrypt}><span class="secondary">Directory names {props.remote.directoryNameEncryption ? 'encrypted' : 'visible'}</span></Show>
+      </div>
+      <Show when={props.remote.isCrypt}><VolumeConduit spec={`${name()}:`} remote={props.remote} /></Show>
+      <div class="actions">
+        <button type="button" class="button" onClick={() => {
+          props.store.setBrowserTarget({ remote: name(), path: '' });
+          props.navigate('Browser');
+        }}>Browse</button>
+        <button type="button" class="button" onClick={() => props.open({ kind: 'mount', remote: name() })}>Mount</button>
+        <button type="button" class="button quiet" disabled={action.pending()} onClick={() => void action.run(() => untrack(() => window.api.testRemote(name())), 'Connection passed.')}>Test connection</button>
+        <button type="button" class="button quiet" onClick={() => props.open({ kind: 'edit', remote: props.remote })}>Edit</button>
+        <Confirm label="Delete" question={`Delete ${name()} from rclone configuration?`} disabled={action.pending()} action={() => window.api.deleteRemote(name())} />
+      </div>
+      <Feedback action={action} />
+    </article>
+  );
+}
+
 export function Remotes(props: PageProps) {
+  const [drawer, setDrawer] = createSignal<DrawerState>();
+  const remotes = () => props.store.snapshot()?.remotes ?? [];
+  const connected = () => props.store.snapshot()?.daemon.state === 'running';
+  const close = () => setDrawer(undefined);
   return (
     <>
-      <PageHeader title="Remotes" />
-      <For each={props.store.snapshot()?.remotes} fallback={<Empty>No remotes available.</Empty>}>
-        {(remote) => (
-          <article class="card remote-card" data-remote={remote.name}>
-            <div class="remote-icon">
-              <Show when={remote.isCrypt} fallback={<Cloud size={20} />}><LockKeyhole size={19} /></Show>
-            </div>
-            <div class="remote-main">
-              <h2>{remote.name}</h2>
-              <Show when={remote.isCrypt}>
-                <p class="secondary">Target <span class="selectable">{remote.config.remote ?? '—'}</span></p>
-                <p class="secondary">Filename encryption {remote.filenameEncryption} · Directory names {remote.directoryNameEncryption ? 'encrypted' : 'visible'}</p>
-              </Show>
-            </div>
-            <span class="chip" classList={{ encrypted: remote.isCrypt }}>{remote.isCrypt ? 'Encrypted' : remote.type}</span>
-          </article>
-        )}
-      </For>
+      <PageHeader title="Remotes" description="Manage cloud connections and the vaults backed by them.">
+        <div class="actions">
+          <button class="button" type="button" disabled={!remotes().length} onClick={() => setDrawer({ kind: 'crypt' })}><LockKeyhole size={16} /> Wrap with encryption</button>
+          <button class="button primary" type="button" disabled={!connected()} onClick={() => setDrawer({ kind: 'add' })}><Plus size={16} /> Add remote</button>
+        </div>
+      </PageHeader>
+      <For each={[true, false]}>{(encrypted) => (
+        <section class="panel">
+          <SectionHeader title={encrypted ? 'Encrypted vaults' : 'Cloud remotes'} />
+          <For each={remotes().filter((remote) => remote.isCrypt === encrypted).map(({ name }) => name)} fallback={<Empty>
+            {!connected() ? 'Connect to rclone to see configured remotes.' : encrypted ? 'No encrypted vaults.' : 'No cloud remotes.'}
+          </Empty>}>{(name) => (
+            <RemoteRow store={props.store} navigate={props.navigate} remote={remotes().find((item) => item.name === name)!} open={setDrawer} />
+          )}</For>
+        </section>
+      )}</For>
+      <Show when={drawer()} keyed>{(current) => {
+        switch (current.kind) {
+          case 'add': return <RemoteDrawer store={props.store} close={close} />;
+          case 'edit': return <RemoteDrawer store={props.store} remote={current.remote} close={close} />;
+          case 'crypt': return <CryptDrawer remotes={remotes()} target={current.target} close={close} saved={(remote, mount) => {
+            if (mount) setDrawer({ kind: 'mount', remote });
+            else close();
+          }} />;
+          case 'mount': return <MountDrawer remote={current.remote} remotes={remotes()} cache={props.store.settings().daemon.defaultVfsCacheMode}
+            connected={connected()} close={close} />;
+        }
+      }}</Show>
     </>
   );
 }

@@ -1,4 +1,6 @@
-import { createSignal, onCleanup, onMount } from 'solid-js';
+import { createSignal, onCleanup, onMount, untrack } from 'solid-js';
+import { LOG_CAPACITY, type AuthSession, type LogLine } from '@shared/types';
+import type { Page } from './components/Sidebar';
 import type { BuildInfo } from '@shared/buildInfo';
 import type { AppSnapshot } from '@shared/ipc';
 import { DEFAULT_SETTINGS, type AppSettings } from '@shared/settings';
@@ -8,6 +10,9 @@ export function createAppStore() {
   const [settings, setSettings] = createSignal(DEFAULT_SETTINGS);
   const [build, setBuild] = createSignal<BuildInfo>();
   const [snapshot, setSnapshot] = createSignal<AppSnapshot>();
+  const [logs, setLogs] = createSignal<LogLine[]>([]);
+  const [auth, setAuth] = createSignal<AuthSession>();
+  const [browserTarget, setBrowserTarget] = createSignal<{ remote: string; path: string }>();
   const [maximized, setMaximized] = createSignal(false);
   const [error, setError] = createSignal('');
   const [ready, setReady] = createSignal(false);
@@ -21,7 +26,13 @@ export function createAppStore() {
     let settingsUpdated = false;
     let maximizeUpdated = false;
     const dispose = [
-      api.onSnapshot((value) => { snapshotUpdated = true; setSnapshot(value); }),
+      api.onSnapshot((value) => {
+        snapshotUpdated = true;
+        setSnapshot(value);
+        if (!untrack(ready)) setLogs(value.logs);
+      }),
+      api.onLog((entry) => setLogs((lines) => [entry, ...lines].slice(0, LOG_CAPACITY))),
+      api.onAuth(setAuth),
       api.onSettings((value) => { settingsUpdated = true; setSettings(value); }),
       api.onMaximized((value) => { maximizeUpdated = true; setMaximized(value); }),
     ];
@@ -31,7 +42,10 @@ export function createAppStore() {
     });
     void api.initialize().then((initial) => {
       if (disposed) return;
-      if (!snapshotUpdated) setSnapshot(initial.snapshot);
+      if (!snapshotUpdated) {
+        setSnapshot(initial.snapshot);
+        setLogs(initial.snapshot.logs);
+      }
       if (!settingsUpdated) setSettings(initial.settings);
       if (!maximizeUpdated) setMaximized(initial.maximized);
       setBuild(initial.build);
@@ -61,8 +75,8 @@ export function createAppStore() {
     }
   }
 
-  return { settings, build, snapshot, maximized, ready, error, refreshing, updateGeneral, refresh };
+  return { settings, build, snapshot, logs, auth, browserTarget, setBrowserTarget, maximized, ready, error, refreshing, updateGeneral, refresh };
 }
 
 export type AppStore = ReturnType<typeof createAppStore>;
-export interface PageProps { store: AppStore }
+export interface PageProps { store: AppStore; navigate: (page: Page) => void }

@@ -1,15 +1,22 @@
 import { Show } from 'solid-js';
-import { Copy, Minus, Square, X } from 'lucide-solid';
+import { Activity, Copy, Minus, Square, X } from 'lucide-solid';
 import { APP_NAME } from '@shared/app';
+import type { TransferStats } from '@shared/types';
+import { formatSpeed } from '../lib/format';
 import { isMac } from '../lib/platform';
 
-export function TitleBar(props: { maximized: boolean }) {
+export function TitleBar(props: { maximized: boolean; stats?: TransferStats | null; showTransfers: () => void }) {
   return (
     <header class="titlebar" classList={{ mac: isMac }}>
       <div class="brand">
         <img src="./icon.png" srcset="./icon@2x.png 2x" alt="" width="18" height="18" />
         <span>{APP_NAME}</span>
       </div>
+      <Show when={props.stats?.transferring.length}>
+        <button type="button" class="transfer-pill" onClick={() => props.showTransfers()}>
+          <Activity size={14} /> {props.stats?.transferring.length} active <span>{formatSpeed(props.stats?.speed ?? null)}</span>
+        </button>
+      </Show>
       <Show when={!isMac}>
         <div class="window-controls">
           <button type="button" aria-label="Minimize" onClick={() => window.api.minimize()}><Minus size={15} /></button>

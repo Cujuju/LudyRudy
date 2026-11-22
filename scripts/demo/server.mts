@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { createServer } from 'node:http';
 import { once } from 'node:events';
 import { posix } from 'node:path';
+import { VAULT_MOUNT } from './fixtures.mts';
 import type { RcItem } from '../../src/main/rcloneClient.ts';
 
 const MIB = 1024 ** 2;
@@ -35,7 +36,14 @@ const PROVIDERS = [
   ['box', 'Box'], ['pcloud', 'pCloud'], ['mega', 'MEGA'], ['local', 'Local filesystem'], ['memory', 'In-memory storage'],
 ].map(([Name, Description]) => ({
   Name, Prefix: Name, Description, Options: Name === 'crypt' ? [
-    { Name: 'remote', Required: true }, { Name: 'password', IsPassword: true },
+    { Name: 'remote', Required: true }, { Name: 'password', IsPassword: true, Required: true },
+    { Name: 'filename_encryption', Default: 'standard', Exclusive: true, Examples: [
+      { Value: 'standard', Help: 'Encrypt filenames' }, { Value: 'obfuscate', Help: 'Obfuscate filenames' },
+      { Value: 'off', Help: 'Keep filenames visible' },
+    ] }, { Name: 'directory_name_encryption', Default: true, Type: 'bool' },
+  ] : Name === 'sftp' ? [
+    { Name: 'host', Required: true }, { Name: 'user' }, { Name: 'pass', IsPassword: true },
+    { Name: 'port', Default: 22, Advanced: true },
   ] : ['drive', 'onedrive', 'dropbox', 'box', 'pcloud'].includes(Name ?? '') ? [{ Name: 'token' }] : [],
 }));
 const TRANSFER = { name: 'Photos/field-trip.zip', size: 512 * MIB, bytes: 256 * MIB, speed: 8 * MIB, eta: 32 };
@@ -43,7 +51,7 @@ const TRANSFER = { name: 'Photos/field-trip.zip', size: 512 * MIB, bytes: 256 * 
 export async function startDemoRclone() {
   const auth = `demo:${randomUUID()}`;
   const authorization = `Basic ${Buffer.from(auth).toString('base64')}`;
-  const mountPoints = new Map([['/demo/vault', { Fs: 'gdrive-vault:', MountPoint: '/demo/vault', MountedOn: DEMO_TIMESTAMP }]]);
+  const mountPoints = new Map([[VAULT_MOUNT, { Fs: 'gdrive-vault:', MountPoint: VAULT_MOUNT, MountedOn: DEMO_TIMESTAMP }]]);
   const remotes: Record<string, Record<string, unknown>> = Object.assign(Object.create(null), structuredClone(REMOTES));
   const listings = new Map(Object.entries(structuredClone(LISTINGS)).map(([name, dirs]) => [
     name, new Map(Object.values(dirs).flatMap((entries) => entries.map((entry) => [entry.Path, entry] as const))),
@@ -102,7 +110,7 @@ export async function startDemoRclone() {
     return {};
   }
 
-  function sync(input: Record<string, unknown>, removeMissing: boolean) {
+  function sync(input: Record<string, unknown>, mode: 'copy' | 'sync' | 'move') {
     const source = fsPath(input.srcFs);
     const target = fsPath(input.dstFs);
     const dryRun = (input._config as { DryRun?: boolean } | undefined)?.DryRun;
@@ -112,14 +120,17 @@ export async function startDemoRclone() {
     const work = () => {
       if (dryRun) return;
       const registry = new Set<string>();
-      for (const entry of children(source.entries, source.key)) {
+      const sourceEntries = children(source.entries, source.key);
+      if (mode === 'move') makeDir(target.entries, target.key);
+      for (const entry of sourceEntries) {
         const name = relative(source.key, entry.Path);
         if (!name || excluded(name)) continue;
         const key = posix.join(target.key, name);
         registry.add(key);
         copyEntry(target.entries, key, entry);
       }
-      if (removeMissing) {
+      if (mode === 'move') for (const { Path } of sourceEntries) source.entries.delete(Path);
+      if (mode === 'sync') {
         for (const entry of children(target.entries, target.key)) {
           const name = relative(target.key, entry.Path);
           if (name && !excluded(name) && !registry.has(entry.Path)) target.entries.delete(entry.Path);
@@ -233,8 +244,9 @@ export async function startDemoRclone() {
     '/operations/copyfile': (input) => transfer(input),
     '/operations/movefile': (input) => transfer(input, true),
     '/operations/about': () => ({ total: 100 * GIB, used: 42 * GIB, free: 58 * GIB, trashed: 0, other: 0 }),
-    '/sync/copy': (input) => sync(input, false),
-    '/sync/sync': (input) => sync(input, true),
+    '/sync/copy': (input) => sync(input, 'copy'),
+    '/sync/sync': (input) => sync(input, 'sync'),
+    '/sync/move': (input) => sync(input, 'move'),
     '/job/list': () => ({ executeId: 'demo', jobids: [...jobs.keys()] }),
     '/job/status': ({ jobid }) => jobStatus(jobid),
     '/job/stop': ({ jobid }) => {

@@ -6,7 +6,7 @@ import { HOUR_CYCLE_ARG, parseHourCycle } from '@shared/timeFormat';
 
 type Fn = (...args: unknown[]) => unknown;
 const hourCycle = parseHourCycle(process.argv.find((a) => a.startsWith(HOUR_CYCLE_ARG))?.slice(HOUR_CYCLE_ARG.length));
-const api: Record<string, unknown> = { platform: process.platform, hourCycle, noticeOverlaySupported: process.argv.includes(NOTICE_OVERLAY_ARG) };
+const api: Record<string, unknown> = { platform: process.platform, arch: process.arch, hourCycle, noticeOverlaySupported: process.argv.includes(NOTICE_OVERLAY_ARG) };
 
 for (const [method, channel] of Object.entries(INVOKE)) {
   api[method] = ((...args: unknown[]) => ipcRenderer.invoke(channel, ...args).catch(unwrapRemoteError)) satisfies Fn;

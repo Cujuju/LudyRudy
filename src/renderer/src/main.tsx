@@ -6,6 +6,8 @@ import { applyTheme } from './lib/format';
 import './styles/tokens.css';
 import './styles/base.css';
 import './styles/components.css';
+import './styles/pages.css';
+import './styles/theme-picker.css';
 
 setHourCycle(window.api.hourCycle);
 applyTheme(SYSTEM_THEME, matchMedia('(prefers-color-scheme: dark)').matches);

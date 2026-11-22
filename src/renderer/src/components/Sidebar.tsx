@@ -18,9 +18,10 @@ export const NAVIGATION = [
 export type Page = typeof NAVIGATION[number]['label'];
 
 export function Sidebar(props: {
-  page: Page; collapsed: boolean; daemon: DaemonStatus['state']; build?: BuildInfo;
+  page: Page; collapsed: boolean; daemon: DaemonStatus['state']; build?: BuildInfo; mounts: number; jobs: number;
   navigate: (page: Page) => void; toggle: () => void;
 }) {
+  const count = (page: Page) => page === 'Mounts' ? props.mounts : page === 'Transfers' ? props.jobs : 0;
   return (
     <aside class="sidebar" classList={{ collapsed: props.collapsed }}>
       <div class="sidebar-top">
@@ -31,10 +32,11 @@ export function Sidebar(props: {
       </div>
       <nav aria-label="Main navigation">
         <For each={NAVIGATION}>{(item) => (
-          <button type="button" class="nav-btn" aria-label={item.label} title={props.collapsed ? item.label : undefined}
+          <button type="button" class="nav-btn" aria-label={item.label} title={props.collapsed ? `${item.label}${count(item.label) ? ` (${count(item.label)} active)` : ''}` : undefined}
             aria-current={props.page === item.label ? 'page' : undefined} onClick={() => props.navigate(item.label)}>
             <item.icon size={17} aria-hidden="true" />
             <Show when={!props.collapsed}><span>{item.label}</span></Show>
+            <Show when={count(item.label)}><span class="nav-count" aria-label={`${count(item.label)} active`}>{count(item.label)}</span></Show>
           </button>
         )}</For>
       </nav>
@@ -44,7 +46,7 @@ export function Sidebar(props: {
           <Show when={!props.collapsed}><span>rclone {props.daemon}</span></Show>
         </div>
         <Show when={!props.collapsed && props.build}>{(build) => (
-          <small class="build-badge" title={`Build ${build().build}${build().modified ? ' (modified)' : ''}`}>v{build().version}</small>
+          <small class="build-badge" title={`Build ${build().build}${build().modified ? ' (modified)' : ''}`}>v{build().version} / {build().build}{build().modified ? '*' : ''}</small>
         )}</Show>
       </footer>
     </aside>

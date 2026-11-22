@@ -5,7 +5,7 @@ import { createServer } from 'node:net';
 import { dirname } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import type { AppSnapshot } from '@shared/ipc';
-import type { LogLine } from '@shared/types';
+import { LOG_CAPACITY, type LogLine } from '@shared/types';
 import { streamDaemonLogs } from './daemonLog';
 import { argument, profileFile, resolveRclone } from './paths';
 import { localVersion, mountBackend } from './prereqs';
@@ -13,7 +13,6 @@ import { RcloneClient, remoteFs, validRemoteName } from './rcloneClient';
 import { getSettings, readConfigPassword } from './settingsStore';
 
 const LOOPBACK = '127.0.0.1';
-const LOG_CAPACITY = 200;
 const RC_CREDENTIAL_BYTES = 32;
 const START_TIMEOUT_MS = 8_000;
 const START_RETRY_MS = 100;
@@ -215,7 +214,7 @@ export function openDaemon(hooks: Hooks = {}) {
     const binary = resolveRclone(config.binaryPath);
     snapshot = {
       ...snapshot,
-      prereqs: { ...snapshot.prereqs, rcloneInstalled: !!binary.binaryPath, rclonePath: binary.binaryPath },
+      prereqs: { ...snapshot.prereqs, rcloneInstalled: !!binary.binaryPath, rclonePath: binary.binaryPath, mountBackend: mountBackend() },
     };
     if (endpoint === undefined) probe(binary.binaryPath);
     status({ state: 'starting', mode: endpoint === undefined ? 'managed' : 'attached', ...binary, error: null,
@@ -231,6 +230,7 @@ export function openDaemon(hooks: Hooks = {}) {
       const { cacheDir, configPath } = managedPaths(config);
       await Promise.all([mkdir(dirname(configPath), { recursive: true }), mkdir(cacheDir, { recursive: true })]);
       const encrypted = await configEncrypted(configPath);
+      status({ configPath, configEncrypted: encrypted });
       const password = encrypted ? await readConfigPassword(configPath) : null;
       if (encrypted && !password) throw new Error('The rclone config requires its encryption password.');
       const user = randomBytes(RC_CREDENTIAL_BYTES).toString('hex');
@@ -241,7 +241,7 @@ export function openDaemon(hooks: Hooks = {}) {
       const child = launch(binary.binaryPath, ['rcd', '--rc-addr', address, '--config', configPath,
         '--cache-dir', cacheDir, '--use-json-log', '--log-level', 'INFO', '--ask-password=false', '--rc-no-auth=false'], env);
       managed = child;
-      status({ endpoint: client.endpoint, configPath, configEncrypted: encrypted });
+      status({ endpoint: client.endpoint });
       const deadline = Date.now() + START_TIMEOUT_MS;
       while (!child.finished && Date.now() < deadline) {
         const ready = await client.call('core/version').then(() => true, () => false);
@@ -274,6 +274,20 @@ export function openDaemon(hooks: Hooks = {}) {
 
   return {
     current: () => snapshot,
+    async refreshLocal(): Promise<void> {
+      const config = getSettings().daemon;
+      const local = resolveRclone(config.binaryPath);
+      const backend = mountBackend();
+      const version = await localVersion(local.binaryPath);
+      const path = managedPaths(config).configPath;
+      const encrypted = configuredEndpoint() === undefined ? await configEncrypted(path) : null;
+      const next = getSettings().daemon;
+      if (next.binaryPath !== config.binaryPath || next.configPath !== config.configPath || next.endpoint !== config.endpoint) return;
+      snapshot = { ...snapshot, prereqs: {
+        ...snapshot.prereqs, rcloneInstalled: !!local.binaryPath, rclonePath: local.binaryPath, rcloneVersion: version, mountBackend: backend,
+      } };
+      if (!rc && !managed && snapshot.daemon.state !== 'starting') status({ ...local, configPath: encrypted === null ? null : path, configEncrypted: encrypted });
+    },
     client(): RcloneClient {
       if (!rc || snapshot.daemon.state !== 'running') throw new Error('Connect to rclone first.');
       return rc;
@@ -296,7 +310,13 @@ export function openDaemon(hooks: Hooks = {}) {
     whileStopped: (action: () => Promise<void>) => serialize(async () => {
       const running = !!managed;
       await stop();
-      try { await action(); } finally { if (running) await start(); }
+      try {
+        await action();
+        const { configPath } = managedPaths();
+        status({ configPath, configEncrypted: await configEncrypted(configPath) });
+      } finally {
+        if (running) await start();
+      }
     }),
   };
 }

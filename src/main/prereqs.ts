@@ -44,7 +44,7 @@ export function mountBackend(platform = process.platform, exists: (path: string)
     const helper = helpers.some((dir) => ['fusermount3', 'fusermount'].some((name) => exists(posix.join(dir, name))));
     return {
       available: device && helper, name: 'FUSE',
-      details: [device ? '/dev/fuse detected' : '/dev/fuse missing', helper ? 'FUSE mount helper detected' : 'fusermount3/fusermount missing'].join(' · '),
+      details: [device ? '/dev/fuse detected' : '/dev/fuse missing', helper ? 'FUSE mount helper detected' : 'fusermount3/fusermount missing'].join(', ') + '.',
       installUrl: 'https://rclone.org/commands/rclone_mount/',
     };
   }

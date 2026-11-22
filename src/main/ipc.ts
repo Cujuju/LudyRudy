@@ -1,5 +1,7 @@
 import { ipcMain, shell } from 'electron';
 import { isAbsolute } from 'node:path';
+import { appNotice } from '@shared/notice';
+import type { startNotices } from './notifier';
 import { INVOKE, SEND, type DesktopApi } from '@shared/ipc';
 import { parseBuildInfo } from '@shared/buildInfo';
 import { setConfigPassword } from './configPassword';
@@ -17,6 +19,7 @@ declare const __APP_VERSION__: string;
 declare const __APP_BUILD__: string;
 
 interface Services {
+  sendNotice: ReturnType<typeof startNotices>;
   daemon: RcloneSupervisor;
   mounts: ReturnType<typeof openMountManager>;
   jobs: ReturnType<typeof openJobManager>;
@@ -26,7 +29,7 @@ interface Services {
   refresh: DesktopApi['refresh'];
 }
 
-export function registerIpc({ daemon, mounts, jobs, auth, remotes, current, refresh }: Services): void {
+export function registerIpc({ daemon, mounts, jobs, auth, remotes, current, refresh, sendNotice }: Services): void {
   const isMain = (sender: Electron.WebContents) => sender === mainWindow()?.webContents;
   const invoke = <K extends keyof typeof INVOKE>(method: K, handler: DesktopApi[K]) => {
     ipcMain.handle(INVOKE[method], (event, ...args: Parameters<DesktopApi[K]>) => {
@@ -50,15 +53,25 @@ export function registerIpc({ daemon, mounts, jobs, auth, remotes, current, refr
     settings: getSettings(), build: parseBuildInfo(__APP_VERSION__, __APP_BUILD__),
     snapshot: current(), maximized: mainWindow()?.isMaximized() ?? false,
   }));
-  invoke('refresh', refresh);
+  invoke('refresh', async () => { await daemon.refreshLocal(); return refresh(); });
   invoke('updateGeneral', (patch) => Promise.resolve(updateSettings({ general: { ...getSettings().general, ...patch } })));
-  invoke('updateDaemon', (patch) => {
+  invoke('updateNotifications', (patch) => Promise.resolve(updateSettings({ notifications: { ...getSettings().notifications, ...patch } })));
+  invoke('noticePreview', () => {
+    sendNotice(appNotice('preview', { title: 'Test notification', body: 'Notifications are ready for drive and transfer updates.' }));
+    return Promise.resolve();
+  });
+  invoke('updateDaemon', async (patch) => {
     const config = { ...getSettings().daemon, ...patch };
     if (config.endpoint) new RcloneClient(config.endpoint);
     for (const path of [config.binaryPath, config.configPath, config.defaultCacheDir]) {
       if (path && (typeof path !== 'string' || !isAbsolute(path) || path.includes('\0'))) throw new Error('Use an absolute path.');
     }
-    return Promise.resolve(updateSettings({ daemon: config }));
+    const settings = updateSettings({ daemon: config });
+    if (patch.binaryPath !== undefined || patch.configPath !== undefined) {
+      await daemon.refreshLocal();
+      await refresh();
+    }
+    return settings;
   });
   invoke('startDaemon', daemon.start);
   invoke('stopDaemon', daemon.stop);
@@ -134,6 +147,15 @@ export function registerIpc({ daemon, mounts, jobs, auth, remotes, current, refr
       await rc.call(command, { srcFs: remoteFs(src), srcRemote: remotePath(srcPath), dstFs: remoteFs(dst), dstRemote: remotePath(dstPath) });
     });
   }
+  invoke('moveDirectory', async (remote, source, destination) => {
+    const rc = daemon.forRemote(remote);
+    const from = remotePath(source);
+    const to = remotePath(destination);
+    if (from === to) return;
+    if (to.startsWith(from + '/') || from.startsWith(to + '/')) throw new Error('Choose a destination outside the source tree.');
+    if (await rc.stat(remote, to)) throw new Error('The destination already exists.');
+    await rc.call('sync/move', { srcFs: remoteFs(remote, from), dstFs: remoteFs(remote, to), createEmptySrcDirs: true, deleteEmptySrcDirs: true });
+  });
   const native = nativeFiles(daemon);
   for (const method of ['pickDirectory', 'pickRcloneBinary', 'uploadFiles', 'downloadFile', 'openExternal', 'openPath'] as const) {
     invoke(method, native[method]);

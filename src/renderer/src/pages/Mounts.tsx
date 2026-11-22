@@ -1,28 +1,25 @@
-import { For } from 'solid-js';
-import { Empty, PageHeader } from '../components/ui';
+import { createSignal, Show } from 'solid-js';
+import type { MountProfile } from '@shared/types';
+import { MountDrawer } from '../components/MountDrawer';
+import { MountLedger, Prerequisites } from '../components/MountLedger';
+import { Confirm, PageHeader } from '../components/ui';
 import type { PageProps } from '../store';
 
 export function Mounts(props: PageProps) {
-  const backend = () => props.store.snapshot()?.prereqs.mountBackend;
+  const [drawer, setDrawer] = createSignal<MountProfile | 'new'>();
   return (
     <>
-      <PageHeader title="Mounts" />
-      <section class="card section">
-        <h2>Local mount support</h2>
-        <p class="secondary">{backend()?.name} · {backend()?.details}</p>
-      </section>
-      <section class="card section">
-        <h2>Active mounts</h2>
-        <For each={props.store.snapshot()?.mounts} fallback={<Empty>No active mounts.</Empty>}>
-          {(mount) => <div class="list-row"><strong>{mount.mountPoint}</strong><span class="secondary">{mount.fs}</span><span class="chip">{mount.status}</span></div>}
-        </For>
-      </section>
-      <section class="card section">
-        <h2>Saved profiles</h2>
-        <For each={props.store.settings().mounts} fallback={<Empty>No saved mount profiles.</Empty>}>
-          {(profile) => <div class="list-row"><strong>{profile.name || profile.id}</strong><span class="secondary">{profile.remote}:{profile.remotePath}</span><span>{profile.mountPoint}</span></div>}
-        </For>
-      </section>
+      <PageHeader title="Mounts" description="Manage where cloud storage appears on this computer.">
+        <Show when={props.store.snapshot()?.mounts.length}>
+          <Confirm label="Unmount all" question="Unmount every active drive?" action={() => window.api.unmountAll()} />
+        </Show>
+      </PageHeader>
+      <Prerequisites store={props.store} navigate={props.navigate} mountingOnly />
+      <MountLedger store={props.store} navigate={props.navigate} detailed edit={setDrawer} add={() => setDrawer('new')} />
+      <Show when={drawer()} keyed>{(profile) => (
+        <MountDrawer profile={profile === 'new' ? undefined : profile} remotes={props.store.snapshot()?.remotes ?? []}
+          cache={props.store.settings().daemon.defaultVfsCacheMode} connected={props.store.snapshot()?.daemon.state === 'running'} close={() => setDrawer(undefined)} />
+      )}</Show>
     </>
   );
 }

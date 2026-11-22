@@ -18,11 +18,14 @@ export interface AppSnapshot {
 
 export interface DesktopApi {
   platform: string;
+  arch: string;
   hourCycle: HourCycle;
   noticeOverlaySupported: boolean;
   initialize(): Promise<{ settings: AppSettings; build: BuildInfo; snapshot: AppSnapshot; maximized: boolean }>;
   refresh(): Promise<AppSnapshot>;
   updateGeneral(patch: Partial<AppSettings['general']>): Promise<AppSettings>;
+  updateNotifications(patch: Partial<AppSettings['notifications']>): Promise<AppSettings>;
+  noticePreview(): Promise<void>;
   updateDaemon(patch: Partial<AppSettings['daemon']>): Promise<AppSettings>;
   startDaemon(): Promise<void>;
   stopDaemon(): Promise<void>;
@@ -66,6 +69,7 @@ export interface DesktopApi {
   purge(remote: string, path: string): Promise<void>;
   copyFile(srcRemote: string, srcPath: string, dstRemote: string, dstPath: string): Promise<void>;
   moveFile(srcRemote: string, srcPath: string, dstRemote: string, dstPath: string): Promise<void>;
+  moveDirectory(remote: string, source: string, destination: string): Promise<void>;
   pickDirectory(): Promise<string | null>;
   pickRcloneBinary(): Promise<string | null>;
   uploadFiles(remote: string, remoteDir: string): Promise<number>;
@@ -84,13 +88,14 @@ export interface DesktopApi {
   onMaximized(cb: (maximized: boolean) => void): () => void;
 }
 
-type Methods = Exclude<keyof DesktopApi, 'platform' | 'hourCycle' | 'noticeOverlaySupported'>;
+type Methods = Exclude<keyof DesktopApi, 'platform' | 'arch' | 'hourCycle' | 'noticeOverlaySupported'>;
 type Invoke = { [K in Methods]: ReturnType<DesktopApi[K]> extends Promise<unknown> ? K : never }[Methods];
 type Send = { [K in Methods]: ReturnType<DesktopApi[K]> extends void ? K : never }[Methods];
 type Event = Exclude<Methods, Invoke | Send>;
 
 export const INVOKE = {
   initialize: 'app:initialize', refresh: 'app:refresh', updateGeneral: 'settings:general',
+  updateNotifications: 'settings:notifications', noticePreview: 'notice:preview',
   browse: 'remote:browse', quota: 'remote:quota',
   updateDaemon: 'settings:daemon', startDaemon: 'daemon:start', stopDaemon: 'daemon:stop', restartDaemon: 'daemon:restart',
   bandwidthLimit: 'daemon:bandwidth', completedTransfers: 'daemon:transferred', resetStats: 'daemon:reset-stats',
@@ -103,7 +108,7 @@ export const INVOKE = {
   mountTypes: 'mount:types', listVfs: 'vfs:list', vfsStats: 'vfs:stats', vfsRefresh: 'vfs:refresh', vfsForget: 'vfs:forget',
   listJobs: 'job:list', saveJob: 'job:save', deleteJob: 'job:delete', runJob: 'job:run', stopJob: 'job:stop',
   stat: 'file:stat', mkdir: 'file:mkdir', deleteFile: 'file:delete', purge: 'file:purge',
-  copyFile: 'file:copy', moveFile: 'file:move', pickDirectory: 'native:directory', pickRcloneBinary: 'native:binary',
+  moveDirectory: 'file:move-directory', copyFile: 'file:copy', moveFile: 'file:move', pickDirectory: 'native:directory', pickRcloneBinary: 'native:binary',
   uploadFiles: 'native:upload', downloadFile: 'native:download', openExternal: 'native:external', openPath: 'native:path',
 } as const satisfies Record<Invoke, string>;
 

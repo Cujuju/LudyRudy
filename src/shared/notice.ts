@@ -3,6 +3,7 @@ import type { AppSettings } from './settings';
 import { darkTheme, resolveTheme, type Palette } from './themes';
 
 export const NOTICE_KINDS = {
+  preview: { tone: 'info', tag: 'Preview' },
   daemonError: { tone: 'error', tag: 'DAEMON' },
   daemonCrashed: { tone: 'error', tag: 'DAEMON' },
   mountFailed: { tone: 'error', tag: 'MOUNT' },

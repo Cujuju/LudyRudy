@@ -78,17 +78,18 @@ export function App() {
 
   return (
     <div class="shell">
-      <TitleBar maximized={store.maximized()} />
+      <TitleBar maximized={store.maximized()} stats={store.snapshot()?.stats} showTransfers={() => navigate('Transfers')} />
       <div class="shell-body">
         <Sidebar page={page()} collapsed={collapsed()} daemon={store.snapshot()?.daemon.state ?? 'stopped'}
-          build={store.build()} navigate={navigate} toggle={toggle} />
+          build={store.build()} mounts={store.snapshot()?.mounts.length ?? 0}
+          jobs={store.snapshot()?.jobRuns.filter((run) => run.state === 'running').length ?? 0} navigate={navigate} toggle={toggle} />
         <main class="page" ref={scroller} tabindex="-1" aria-label={page()}
           onScroll={rememberScroll}>
           <div class="page-content" ref={content}>
             <Show when={store.error()}>{(message) => <p class="banner error" role="alert">{message()}</p>}</Show>
             <Show when={store.ready()} fallback={<Show when={!store.error()}><p role="status">Loading ludyRudy…</p></Show>}>
               <Show when={store.snapshot()?.dataError}>{(message) => <p class="banner" role="status">{message()}</p>}</Show>
-              <Dynamic component={PAGES[page()]} store={store} />
+              <Dynamic component={PAGES[page()]} store={store} navigate={navigate} />
             </Show>
           </div>
         </main>

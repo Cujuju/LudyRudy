@@ -125,6 +125,8 @@ export interface SyncJobRun {
   error: string | null;
 }
 
+export const LOG_CAPACITY = 200;
+
 export interface LogLine {
   ts: string;
   level: 'info' | 'warn' | 'error';

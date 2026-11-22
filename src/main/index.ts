@@ -84,7 +84,7 @@ else {
     }
 
     installAppMenu();
-    registerIpc({ daemon, mounts, jobs, auth, remotes, current, refresh });
+    registerIpc({ daemon, mounts, jobs, auth, remotes, current, refresh, sendNotice });
     onSettingsChange((settings) => {
       applyLoginSettings();
       syncWindowBackground();
@@ -93,12 +93,12 @@ else {
     });
     nativeTheme.on('updated', syncWindowBackground);
     applyLoginSettings();
-    const minimized = process.argv.includes(LOGIN_MINIMIZED_ARG) || (process.platform === 'darwin' && app.isPackaged
-      && getSettings().general.startMinimized && app.getLoginItemSettings().wasOpenedAtLogin);
+    const minimized = process.argv.includes(LOGIN_MINIMIZED_ARG) || getSettings().general.startMinimized;
     createMainWindow(minimized);
     app.on('activate', showMainWindow);
     publish();
     if (daemon.current().daemon.mode === 'attached' || getSettings().daemon.autoStart) void daemon.start().catch(report);
+    else void daemon.refreshLocal().catch(report);
     const timer = setInterval(() => { void refresh().catch(report); }, POLL_INTERVAL_MS);
     let shutdown: Promise<void> | undefined;
     app.on('before-quit', (event) => {
