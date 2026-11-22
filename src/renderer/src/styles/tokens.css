@@ -26,14 +26,17 @@
   --sidebar-rail-width: 54px;
   --nav-btn-size: 36px;
   --control-height: 32px;
+  --section-header-height: 48px;
   --window-control-width: 44px;
   --page-pad: clamp(var(--spacing-4), 2.5vw, 32px);
   --page-max: 1320px;
+  --settings-max: 860px;
   --card-gap: var(--spacing-2);
   --dot-size: 8px;
   --bar-height: 5px;
   --scrollbar-size: 10px;
   --opacity-disabled: .55;
+  --transition-fast: 120ms ease;
 }
 
 :root, .theme-scope {

@@ -26,7 +26,7 @@ function RemoteRow(props: PageProps & { remote: RemoteSummary; open: (drawer: Dr
         <Show when={props.remote.isCrypt}><span class="secondary">Directory names {props.remote.directoryNameEncryption ? 'encrypted' : 'visible'}</span></Show>
       </div>
       <Show when={props.remote.isCrypt}><VolumeConduit spec={`${name()}:`} remote={props.remote} /></Show>
-      <div class="actions">
+      <div class="actions remote-actions">
         <button type="button" class="button" onClick={() => {
           props.store.setBrowserTarget({ remote: name(), path: '' });
           props.navigate('Browser');
@@ -34,7 +34,8 @@ function RemoteRow(props: PageProps & { remote: RemoteSummary; open: (drawer: Dr
         <button type="button" class="button" onClick={() => props.open({ kind: 'mount', remote: name() })}>Mount</button>
         <button type="button" class="button quiet" disabled={action.pending()} onClick={() => void action.run(() => untrack(() => window.api.testRemote(name())), 'Connection passed.')}>Test connection</button>
         <button type="button" class="button quiet" onClick={() => props.open({ kind: 'edit', remote: props.remote })}>Edit</button>
-        <Confirm label="Delete" question={`Delete ${name()} from rclone configuration?`} disabled={action.pending()} action={() => window.api.deleteRemote(name())} />
+        <div class="action-danger"><Confirm label="Delete" question={`Delete ${name()} from rclone configuration?`} disabled={action.pending()}
+          action={() => window.api.deleteRemote(name())} /></div>
       </div>
       <Feedback action={action} />
     </article>

@@ -1,38 +1,43 @@
-import { createMemo, createResource, createSignal, For, Show, untrack } from 'solid-js';
+import { createMemo, createResource, createSignal, createUniqueId, For, Show, untrack } from 'solid-js';
+import { FolderOpen, X } from 'lucide-solid';
 import { VFS_CACHE_MODES } from '@shared/types';
 import type { AppSettings } from '@shared/settings';
 import type { AppStore } from '../store';
 import { errorMessage, useAction } from '../lib/actions';
-import { Confirm, Feedback, SectionHeader, SecretInput, Segmented, Toggle } from './ui';
+import { Confirm, Feedback, SectionHeader, SecretInput, Segmented, sentenceCase, Toggle } from './ui';
 
 function LocationSetting(props: {
   label: string; value: string; placeholder?: string; save: (value: string) => Promise<unknown>;
   chooseLabel?: string; choose?: () => Promise<string | null>;
 }) {
+  const id = createUniqueId();
   const [draft, setDraft] = createSignal<string>();
   const action = useAction();
   const value = () => draft() ?? props.value;
+  const dirty = () => value() !== props.value;
   async function save(path: string) {
     if (await action.run(() => untrack(() => props.save(path.trim())), 'Saved.')) setDraft(undefined);
   }
   return (
-    <form class="setting-form" onSubmit={(event) => { event.preventDefault(); void save(value()); }}>
-      <label class="field">{props.label}
-        <input class="path" value={value()} placeholder={props.placeholder} disabled={action.pending()} onInput={(event) => setDraft(event.currentTarget.value)} />
-      </label>
-      <div class="actions">
-        <button type="submit" class="button" disabled={value() === props.value || action.pending()}>Save</button>
+    <form class="field" onSubmit={(event) => { event.preventDefault(); if (dirty()) void save(value()); }}>
+      <label for={id}>{props.label}</label>
+      <div class="input-group">
+        <input id={id} class="path" value={value()} placeholder={props.placeholder} disabled={action.pending()} onInput={(event) => setDraft(event.currentTarget.value)} />
+        <Show when={value()}>
+          <button type="button" class="input-inline-btn" aria-label={`Clear ${props.label.toLowerCase()}`} title="Clear"
+            disabled={action.pending()} onClick={() => void save('')}><X size={14} aria-hidden="true" /></button>
+        </Show>
+        <Show when={dirty()}><button type="submit" class="button primary input-addon" disabled={action.pending()}>Save</button></Show>
         <Show when={props.choose}>{(choose) => (
-          <button type="button" class="button" disabled={action.pending()} onClick={() => void action.run(async () => {
+          <button type="button" class="button input-addon" aria-label={props.chooseLabel} disabled={action.pending()} onClick={() => void action.run(async () => {
             const location = await untrack(() => choose()());
             if (location) {
               setDraft(location);
               await untrack(() => props.save(location));
               setDraft(undefined);
             }
-          })}>{props.chooseLabel}</button>
+          })}><FolderOpen size={14} aria-hidden="true" /> Browse</button>
         )}</Show>
-        <button type="button" class="button quiet" disabled={!value() || action.pending()} onClick={() => void save('')}>Clear</button>
       </div>
       <Feedback action={action} />
     </form>
@@ -87,15 +92,16 @@ function ConfigEncryption(props: { store: AppStore }) {
             const unlocking = locked();
             if (!removing()) void action.run(() => untrack(() => change(password())), unlocking ? 'Config unlocked. Start the daemon when ready.' : 'Config encryption updated.');
           }}>
-            <SecretInput label={locked() ? 'Existing config password' : 'New config password'} required value={password()} onInput={setPassword} />
-            <div class="actions">
-              <button type="submit" class="button primary" disabled={action.pending() || removing() || stored.loading || !password().trim() || !daemon()?.binaryPath}>{label()}</button>
-              <Show when={encrypted() && !locked()}>
-                <Confirm label="Remove encryption" question="Remove password protection from rclone.conf?" disabled={action.pending()}
-                  action={removeEncryption} />
-              </Show>
-            </div>
+            <SecretInput label={locked() ? 'Existing config password' : 'New config password'} required value={password()} onInput={setPassword}>
+              <button type="submit" class="button primary input-addon" disabled={action.pending() || removing() || stored.loading || !password().trim() || !daemon()?.binaryPath}>{label()}</button>
+            </SecretInput>
           </form>
+          <Show when={encrypted() && !locked()}>
+            <div class="actions">
+              <Confirm label="Remove encryption" question="Remove password protection from rclone.conf?" disabled={action.pending()}
+                action={removeEncryption} />
+            </div>
+          </Show>
           <Feedback action={action} />
         </Show>
       </div>
@@ -128,12 +134,15 @@ export function DaemonSettings(props: { store: AppStore }) {
             chooseLabel="Choose folder" choose={window.api.pickDirectory} save={(defaultCacheDir) => change({ defaultCacheDir })} />
           <LocationSetting label="External endpoint override" value={config().endpoint} placeholder="Use the managed daemon"
             save={(endpoint) => change({ endpoint })} />
-          <p class="secondary">Restart rclone to apply daemon changes.</p>
-          <div class="actions">
-            <For each={['config', 'cache', 'data'] as const}>{(kind) => (
-              <button type="button" class="button" disabled={action.pending()} onClick={() => void action.run(() => window.api.openPath(kind))}>Open {kind} folder</button>
-            )}</For>
-          </div>
+          <footer class="settings-footer">
+            <p class="secondary">Restart rclone to apply daemon changes.</p>
+            <div class="actions">
+              <For each={['config', 'cache', 'data'] as const}>{(kind) => (
+                <button type="button" class="button quiet" aria-label={`Open ${kind} folder`} disabled={action.pending()}
+                  onClick={() => void action.run(() => window.api.openPath(kind))}><FolderOpen size={14} aria-hidden="true" /> {sentenceCase(kind)}</button>
+              )}</For>
+            </div>
+          </footer>
           <Feedback action={action} />
         </div>
       </section>

@@ -71,8 +71,8 @@ function MountRow(props: MountProps & { profile?: MountProfile; external?: Activ
             <Show when={mount()}><button type="button" class="button quiet" disabled={action.pending()} onClick={() => void action.run(
               () => untrack(() => window.api.vfsRefresh(profile().remote, profile().remotePath)), 'VFS cache refreshed.')}>Refresh VFS cache</button></Show>
             <button type="button" class="button quiet" disabled={action.pending()} onClick={() => props.edit?.(profile())}>Edit</button>
-            <Confirm label="Delete profile" question={mount() ? 'Delete the profile? The drive will stay mounted.' : 'Delete this mount profile?'}
-              disabled={action.pending()} action={() => window.api.deleteMountProfile(profile().id)} />
+            <div class="action-danger"><Confirm label="Delete profile" question={mount() ? 'Delete the profile? The drive will stay mounted.' : 'Delete this mount profile?'}
+              disabled={action.pending()} action={() => window.api.deleteMountProfile(profile().id)} /></div>
           </>
         )}</Show>
       </div>

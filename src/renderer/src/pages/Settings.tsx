@@ -71,7 +71,10 @@ function Notifications(props: PageProps) {
             onChange={(dripLip) => change({ dripLip })} /></Show>
         </Show>
         <Toggle label="Daemon error alerts" checked={config().daemonErrors} disabled={action.pending()} onChange={(daemonErrors) => change({ daemonErrors })} />
-        <button type="button" class="button" disabled={action.pending()} onClick={() => void action.run(window.api.noticePreview, 'Test notice requested.')}>Send test notice</button>
+        <footer class="settings-footer">
+          <div class="actions"><button type="button" class="button" disabled={action.pending()}
+            onClick={() => void action.run(window.api.noticePreview, 'Test notice requested.')}>Send test notice</button></div>
+        </footer>
         <Feedback action={action} />
       </div>
     </section>
@@ -81,10 +84,10 @@ function Notifications(props: PageProps) {
 export function Settings(props: PageProps) {
   const [section, setSection] = createSignal<typeof SECTIONS[number]>('General');
   return (
-    <>
+    <div class="settings-stack">
       <PageHeader title="Settings" description="Set app preferences, daemon defaults, and notifications." />
       <nav class="settings-nav" aria-label="Settings sections">
-        <For each={SECTIONS}>{(item) => <button type="button" class="button quiet" aria-current={section() === item ? 'page' : undefined}
+        <For each={SECTIONS}>{(item) => <button type="button" aria-current={section() === item ? 'page' : undefined}
           onClick={() => setSection(item)}>{item}</button>}</For>
       </nav>
       <Switch>
@@ -95,15 +98,15 @@ export function Settings(props: PageProps) {
           <section class="panel">
             <SectionHeader title="About ludyRudy" />
             <dl class="properties settings-body">
-              <dt>Version</dt><dd>{props.store.build()?.version}</dd>
-              <dt>Build</dt><dd>{props.store.build()?.build}{props.store.build()?.modified ? ' (modified)' : ''}</dd>
-              <dt>rclone</dt><dd>{props.store.snapshot()?.daemon.version ?? props.store.snapshot()?.prereqs.rcloneVersion ?? 'Unavailable'}</dd>
-              <dt>Platform</dt><dd>{window.api.platform} / {window.api.arch}</dd>
-              <dt>License</dt><dd>MIT</dd>
+              <div><dt>Version</dt><dd class="path">{props.store.build()?.version}</dd></div>
+              <div><dt>Build</dt><dd class="path">{props.store.build()?.build}{props.store.build()?.modified ? ' (modified)' : ''}</dd></div>
+              <div><dt>rclone</dt><dd class="path">{props.store.snapshot()?.daemon.version ?? props.store.snapshot()?.prereqs.rcloneVersion ?? 'Unavailable'}</dd></div>
+              <div><dt>Platform</dt><dd class="path">{window.api.platform} / {window.api.arch}</dd></div>
+              <div><dt>License</dt><dd>MIT</dd></div>
             </dl>
           </section>
         </Match>
       </Switch>
-    </>
+    </div>
   );
 }
