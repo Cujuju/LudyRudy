@@ -2,7 +2,7 @@ import { createMemo, createResource, createSignal, For, Show, untrack } from 'so
 import { ChevronRight, File, Folder, FolderPlus, LockKeyhole, RefreshCw, Upload } from 'lucide-solid';
 import type { RemoteEntry } from '@shared/types';
 import { Quota } from '../components/Quota';
-import { Confirm, Drawer, Empty, Feedback, FormActions, PageHeader } from '../components/ui';
+import { Confirm, Drawer, Empty, Feedback, FormActions, PageHeader, SearchField } from '../components/ui';
 import { errorMessage, useAction } from '../lib/actions';
 import { formatBytes, formatTime } from '../lib/format';
 import type { PageProps } from '../store';
@@ -108,7 +108,7 @@ export function Browser(props: PageProps) {
               <For each={remotes()}>{(item) => <option value={item.name} selected={selection() === item.name}>{item.name}{item.isCrypt ? ' (encrypted)' : ''}</option>}</For>
             </select></label>
             <div class="actions">
-              <input aria-label="Filter filenames" type="search" placeholder="Filter filenames" value={filter()} onInput={(event) => setFilter(event.currentTarget.value)} />
+              <SearchField label="Filter filenames" value={filter()} onInput={setFilter} />
               <button type="button" class="button" onClick={newFolder}><FolderPlus size={15} /> New folder</button>
               <button type="button" class="button" disabled={!nativeTransfers() || action.pending()}
                 title={nativeTransfers() ? undefined : 'File uploads require the managed daemon.'} onClick={() => void action.run(async () => {

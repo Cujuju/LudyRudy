@@ -1,5 +1,6 @@
 import { For, Show, untrack } from 'solid-js';
 import { createStore } from 'solid-js/store';
+import { Copy } from 'lucide-solid';
 import type { CryptDraft, RemoteSummary } from '@shared/types';
 import { useAction } from '../lib/actions';
 import { Drawer, Feedback, FormActions, SecretInput, Segmented, Toggle } from './ui';
@@ -37,14 +38,18 @@ export function CryptDrawer(props: { remotes: RemoteSummary[]; target?: string; 
             onInput={(event) => setDraft('targetPath', event.currentTarget.value)} /></label>
           <label class="field">Vault name<input required value={draft.name} onInput={(event) => setDraft('name', event.currentTarget.value)} /></label>
           <SecretInput label="Vault password" value={draft.password} required onInput={(value) => setDraft('password', value)}>
-            <button type="button" class="button" disabled={tools.pending()} onClick={() => generate('password')}>Generate password</button>
-            <button type="button" class="button" disabled={!draft.password || tools.pending()} onClick={() => void tools.run(
-              () => untrack(() => navigator.clipboard.writeText(draft.password)), 'Password copied.')}>Copy password</button>
+            <button type="button" class="button input-addon" aria-label="Generate password" title={`Generate ${VAULT_SECRET_BITS}-bit password`}
+              disabled={tools.pending()} onClick={() => generate('password')}>Generate</button>
+            <button type="button" class="button input-addon" aria-label="Copy password" title="Copy password"
+              disabled={!draft.password || tools.pending()} onClick={() => void tools.run(
+                () => untrack(() => navigator.clipboard.writeText(draft.password)), 'Password copied.')}><Copy size={14} aria-hidden="true" /></button>
           </SecretInput>
           <SecretInput label="Salt (optional)" value={draft.salt ?? ''} onInput={(value) => setDraft('salt', value)}>
-            <button type="button" class="button" disabled={tools.pending()} onClick={() => generate('salt')}>Generate salt</button>
-            <button type="button" class="button" disabled={!draft.salt || tools.pending()} onClick={() => void tools.run(
-              () => untrack(() => navigator.clipboard.writeText(draft.salt ?? '')), 'Salt copied.')}>Copy salt</button>
+            <button type="button" class="button input-addon" aria-label="Generate salt" title={`Generate ${VAULT_SECRET_BITS}-bit salt`}
+              disabled={tools.pending()} onClick={() => generate('salt')}>Generate</button>
+            <button type="button" class="button input-addon" aria-label="Copy salt" title="Copy salt"
+              disabled={!draft.salt || tools.pending()} onClick={() => void tools.run(
+                () => untrack(() => navigator.clipboard.writeText(draft.salt ?? '')), 'Salt copied.')}><Copy size={14} aria-hidden="true" /></button>
           </SecretInput>
           <p class="banner">Save the password and any salt somewhere safe. You’ll need them to recover the vault.</p>
           <div class="field">Filename encryption

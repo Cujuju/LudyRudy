@@ -1,10 +1,12 @@
-import { Show, untrack } from 'solid-js';
+import { createUniqueId, For, Show, untrack } from 'solid-js';
 import { createStore } from 'solid-js/store';
+import { FolderOpen } from 'lucide-solid';
 import type { SyncJob } from '@shared/types';
 import { useAction } from '../lib/actions';
-import { Drawer, Feedback, FormActions, Segmented, Toggle } from './ui';
+import { Drawer, Feedback, FormActions, Segmented, sentenceCase, Toggle } from './ui';
 
 const JOB_MODES = ['copy', 'sync'] as const;
+const JOB_PATHS = ['source', 'destination'] as const;
 type JobDraft = Parameters<typeof window.api.saveJob>[0];
 
 export function JobDrawer(props: { job?: SyncJob; attached: boolean; close: () => void }) {
@@ -13,6 +15,7 @@ export function JobDrawer(props: { job?: SyncJob; attached: boolean; close: () =
   }));
   const action = useAction();
   const picker = useAction();
+  const pathId = createUniqueId();
 
   function choose(field: 'source' | 'destination') {
     void picker.run(async () => {
@@ -37,12 +40,20 @@ export function JobDrawer(props: { job?: SyncJob; attached: boolean; close: () =
             <p class="secondary">{draft.mode === 'sync' ? 'Sync can remove files from the destination to match the source.' : 'Copy keeps files that already exist only at the destination.'}</p>
           </div>
           <Show when={props.attached}><p class="secondary">Absolute paths refer to the computer running the attached daemon.</p></Show>
-          <label class="field">Source<input class="path" placeholder="remote:folder or absolute path" required value={draft.source}
-            onInput={(event) => setDraft('source', event.currentTarget.value)} /></label>
-          <button type="button" class="button" disabled={props.attached || picker.pending()} onClick={() => choose('source')}>Choose source folder</button>
-          <label class="field">Destination<input class="path" placeholder="remote:folder or absolute path" required value={draft.destination}
-            onInput={(event) => setDraft('destination', event.currentTarget.value)} /></label>
-          <button type="button" class="button" disabled={props.attached || picker.pending()} onClick={() => choose('destination')}>Choose destination folder</button>
+          <For each={JOB_PATHS}>{(field) => {
+            const id = `${pathId}-${field}`;
+            return (
+              <div class="field">
+                <label for={id}>{sentenceCase(field)}</label>
+                <div class="input-group">
+                  <input id={id} class="path" placeholder="remote:folder or absolute path" required value={draft[field]}
+                    onInput={(event) => setDraft(field, event.currentTarget.value)} />
+                  <button type="button" class="button input-addon" aria-label={`Choose ${field} folder`}
+                    disabled={props.attached || picker.pending()} onClick={() => choose(field)}><FolderOpen size={14} aria-hidden="true" /> Browse</button>
+                </div>
+              </div>
+            );
+          }}</For>
           <label class="field">Exclude patterns<textarea placeholder="One rclone pattern per line" value={draft.excludes.join('\n')}
             onInput={(event) => setDraft('excludes', event.currentTarget.value.split('\n'))} /></label>
           <Toggle label="Enabled" checked={draft.enabled} onChange={(value) => setDraft('enabled', value)} />

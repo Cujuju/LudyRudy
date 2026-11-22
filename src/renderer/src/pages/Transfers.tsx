@@ -14,24 +14,29 @@ function Throughput(props: PageProps) {
   const action = useAction();
   const [rate, setRate] = createSignal('');
   const limit = (value: string) => window.api.bandwidthLimit(value);
+  const bandwidth = () => stats()?.bwLimit ?? '';
   return (
     <div class="telemetry transfer-telemetry">
-      <div class="telemetry-unit"><Activity size={19} /><div><strong>{formatSpeed(stats()?.speed ?? null)}</strong><span>Transfer speed</span></div></div>
-      <div class="telemetry-unit"><div><strong>{formatBytes(stats()?.bytes ?? null)}</strong><span>Transferred</span></div></div>
-      <div class="telemetry-unit"><div><strong>{stats()?.errors ?? 'Unavailable'}</strong><span>Errors</span></div></div>
-      <button type="button" class="button" disabled={!stats() || action.pending()} onClick={() => void action.run(window.api.resetStats, 'Transfer stats reset.')}>
+      <div class="telemetry-metrics">
+        <div class="telemetry-unit"><Activity size={19} /><div><strong>{formatSpeed(stats()?.speed ?? null)}</strong><span>Transfer speed</span></div></div>
+        <div class="telemetry-unit"><div><strong>{formatBytes(stats()?.bytes ?? null)}</strong><span>Transferred</span></div></div>
+        <div class="telemetry-unit"><div><strong>{stats()?.errors ?? 'Unavailable'}</strong><span>Errors</span></div></div>
+      </div>
+      <button type="button" class="button telemetry-actions" disabled={!stats() || action.pending()} onClick={() => void action.run(window.api.resetStats, 'Transfer stats reset.')}>
         <RotateCcw size={14} /> Reset stats
       </button>
       <div class="bandwidth-controls">
-        <div class="row"><Gauge size={17} /> <strong>Bandwidth limit</strong><span class="chip">{stats()?.bwLimit ?? 'Unavailable'}</span></div>
-        <Segmented label="Bandwidth presets" options={BANDWIDTH_PRESETS} value={stats()?.bwLimit ?? ''} disabled={!stats() || action.pending()}
+        <div class="row"><Gauge size={17} /> <strong>Bandwidth limit</strong>
+          <Show when={!BANDWIDTH_PRESETS.some((preset) => preset === bandwidth())}><span class="chip">{bandwidth() || 'Unavailable'}</span></Show>
+        </div>
+        <Segmented label="Bandwidth presets" options={BANDWIDTH_PRESETS} value={bandwidth()} disabled={!stats() || action.pending()}
           onChange={(value) => void action.run(() => limit(value))} />
-        <form class="row" onSubmit={(event) => {
+        <form class="input-group" onSubmit={(event) => {
           event.preventDefault();
           if (rate().trim()) void action.run(() => untrack(() => limit(rate().trim())));
         }}>
           <input aria-label="Custom bandwidth rate" placeholder="e.g. 10M" value={rate()} onInput={(event) => setRate(event.currentTarget.value)} />
-          <button type="submit" class="button" disabled={!stats() || !rate().trim() || action.pending()}>Apply</button>
+          <button type="submit" class="button input-addon" disabled={!stats() || !rate().trim() || action.pending()}>Apply</button>
         </form>
       </div>
       <Feedback action={action} />
@@ -74,7 +79,8 @@ function JobRow(props: PageProps & { job: SyncJob; onEdit: () => void }) {
         }>{(item) => <button type="button" class="button" disabled={action.pending()}
           onClick={() => void action.run(() => untrack(() => window.api.stopJob(item().rcloneJobId)))}>Stop</button>}</Show>
         <button type="button" class="button quiet" disabled={!!running() || action.pending()} onClick={() => props.onEdit()}>Edit</button>
-        <Confirm label="Delete job" question="Delete this saved job?" disabled={!!running() || action.pending()} action={() => window.api.deleteJob(props.job.id)} />
+        <div class="action-danger"><Confirm label="Delete job" question="Delete this saved job?" disabled={!!running() || action.pending()}
+          action={() => window.api.deleteJob(props.job.id)} /></div>
         <span class="secondary">{props.job.excludes.length} {props.job.excludes.length === 1 ? 'exclude' : 'excludes'}{props.job.dryRunDefault ? ' / Dry run by default' : ''}</span>
       </div>
       <Feedback action={action} />

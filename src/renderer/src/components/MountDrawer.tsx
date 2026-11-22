@@ -1,5 +1,6 @@
-import { createSignal, For, onMount, Show, untrack } from 'solid-js';
+import { createSignal, createUniqueId, For, onMount, Show, untrack } from 'solid-js';
 import { createStore } from 'solid-js/store';
+import { FolderOpen } from 'lucide-solid';
 import { VFS_CACHE_MODES, type MountProfile, type RemoteSummary } from '@shared/types';
 import { useAction } from '../lib/actions';
 import { Drawer, Feedback, FormActions, Segmented, Toggle } from './ui';
@@ -20,6 +21,8 @@ export function MountDrawer(props: {
   const [types, setTypes] = createSignal<string[]>([]);
   const action = useAction();
   const lookup = useAction();
+  const mountPointId = createUniqueId();
+  const mountPointHint = window.api.platform === 'win32' ? 'e.g. X:\\ or C:\\Mounts\\vault' : 'e.g. /mnt/vault';
   onMount(() => {
     if (props.connected) void lookup.run(async () => setTypes(await window.api.mountTypes()));
   });
@@ -43,11 +46,17 @@ export function MountDrawer(props: {
             </Show>
           </select></label>
           <label class="field">Remote subfolder<input class="path" placeholder="Remote root" value={draft.remotePath} onInput={(event) => setDraft('remotePath', event.currentTarget.value)} /></label>
-          <label class="field">Mount point<input class="path" required value={draft.mountPoint} onInput={(event) => setDraft('mountPoint', event.currentTarget.value)} /></label>
-          <button type="button" class="button" disabled={lookup.pending()} onClick={() => void lookup.run(async () => {
-            const path = await window.api.pickDirectory();
-            if (path) setDraft('mountPoint', path);
-          })}>Choose folder</button>
+          <div class="field">
+            <label for={mountPointId}>Mount point</label>
+            <div class="input-group">
+              <input id={mountPointId} class="path" placeholder={mountPointHint} required value={draft.mountPoint}
+                onInput={(event) => setDraft('mountPoint', event.currentTarget.value)} />
+              <button type="button" class="button input-addon" aria-label="Choose folder" disabled={lookup.pending()} onClick={() => void lookup.run(async () => {
+                const path = await window.api.pickDirectory();
+                if (path) setDraft('mountPoint', path);
+              })}><FolderOpen size={14} aria-hidden="true" /> Browse</button>
+            </div>
+          </div>
           <div class="field">VFS cache mode
             <Segmented label="VFS cache mode" options={VFS_CACHE_MODES} value={draft.vfsCacheMode ?? 'off'} onChange={(value) => setDraft('vfsCacheMode', value)} />
           </div>

@@ -17,15 +17,17 @@ function Telemetry(props: PageProps) {
   const busy = () => daemon()?.state === 'starting' || action.pending();
   return (
     <div class="telemetry">
-      <div class="telemetry-unit">
-        <Server size={19} />
-        <div><strong class="row"><StatusDot state={daemon()?.state ?? 'stopped'} />{sentenceCase(daemon()?.state ?? 'stopped')}</strong>
-          <span>{daemon()?.mode === 'attached' ? 'Attached' : 'Managed'}{daemon()?.version ? ` / ${daemon()?.version}` : ''}</span></div>
+      <div class="telemetry-metrics">
+        <div class="telemetry-unit">
+          <Server size={19} />
+          <div><strong class="row"><StatusDot state={daemon()?.state ?? 'stopped'} />{sentenceCase(daemon()?.state ?? 'stopped')}</strong>
+            <span>{daemon()?.mode === 'attached' ? 'Attached' : 'Managed'}{daemon()?.version ? ` / ${daemon()?.version}` : ''}</span></div>
+        </div>
+        <div class="telemetry-unit"><Activity size={19} /><div><strong>{formatSpeed(stats()?.speed ?? null)}</strong>
+          <span>{stats()?.transferring.length ?? 0} active / {formatBytes(stats()?.bytes ?? null)} transferred</span></div></div>
+        <div class="telemetry-unit"><span class="chip">Bandwidth cap: {stats()?.bwLimit ?? 'off'}</span></div>
       </div>
-      <div class="telemetry-unit"><Activity size={19} /><div><strong>{formatSpeed(stats()?.speed ?? null)}</strong>
-        <span>{stats()?.transferring.length ?? 0} active / {formatBytes(stats()?.bytes ?? null)} transferred</span></div></div>
-      <div class="telemetry-unit"><span class="chip">Bandwidth cap: {stats()?.bwLimit ?? 'off'}</span></div>
-      <div class="actions">
+      <div class="actions telemetry-actions">
         <Show when={daemon()?.state !== 'running'}>
           <button class="button" type="button" disabled={busy()} onClick={() => void action.run(window.api.startDaemon)}>Start</button>
         </Show>

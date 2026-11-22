@@ -1,5 +1,5 @@
-import { createSignal, For, onCleanup, onMount, Show, type JSX } from 'solid-js';
-import { X } from 'lucide-solid';
+import { createSignal, createUniqueId, For, onCleanup, onMount, Show, type JSX } from 'solid-js';
+import { Eye, EyeOff, Search, X } from 'lucide-solid';
 import type { DaemonStatus } from '@shared/types';
 import { useAction } from '../lib/actions';
 
@@ -112,19 +112,30 @@ export function FormActions(props: { label: string; close: () => void; busy: boo
 }
 
 export function SecretInput(props: { label: string; value: string; required?: boolean; placeholder?: string; onInput: (value: string) => void; children?: JSX.Element }) {
+  const id = createUniqueId();
   const [revealed, setRevealed] = createSignal(false);
+  const toggleLabel = () => `${revealed() ? 'Hide' : 'Show'} ${props.label.toLowerCase()}`;
   return (
     <div class="field">
-      <label class="field">
-        <span>{props.label}</span>
-        <input type={revealed() ? 'text' : 'password'} autocomplete="off" spellcheck={false} required={props.required}
+      <label for={id}>{props.label}</label>
+      <div class="input-group">
+        <input id={id} type={revealed() ? 'text' : 'password'} autocomplete="off" spellcheck={false} required={props.required}
           placeholder={props.placeholder} value={props.value} onInput={(event) => props.onInput(event.currentTarget.value)} />
-      </label>
-      <div class="actions">
-        <button type="button" class="button" aria-label={`${revealed() ? 'Hide' : 'Show'} ${props.label.toLowerCase()}`}
-          onClick={() => setRevealed(!revealed())}>{revealed() ? 'Hide' : 'Show'}</button>
+        <button type="button" class="input-inline-btn" aria-label={toggleLabel()} title={toggleLabel()} onClick={() => setRevealed(!revealed())}>
+          <Show when={revealed()} fallback={<Eye size={15} aria-hidden="true" />}><EyeOff size={15} aria-hidden="true" /></Show>
+        </button>
         {props.children}
       </div>
+    </div>
+  );
+}
+
+export function SearchField(props: { label: string; value: string; onInput: (value: string) => void }) {
+  return (
+    <div class="search-field">
+      <Search size={14} aria-hidden="true" />
+      <input type="search" aria-label={props.label} placeholder={props.label} value={props.value}
+        onInput={(event) => props.onInput(event.currentTarget.value)} />
     </div>
   );
 }

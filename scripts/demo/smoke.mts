@@ -163,7 +163,7 @@ async function verifyUi(page: Cdp, abort: () => string | null) {
   await click('Run dry run');
   await contains('Finished (dry run)');
   await click('New job');
-  await contains('Choose source folder', 'dialog[open]');
+  await until('source folder picker', async () => (await page.eval<boolean>(`!!document.querySelector('dialog[open] button[aria-label="Choose source folder"]')`)) || null, abort);
   await click('Close drawer', 'dialog[open]');
 
   await openPage(page, 'Logs', abort);
