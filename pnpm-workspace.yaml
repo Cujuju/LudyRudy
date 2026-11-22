@@ -1,4 +1,13 @@
+# pnpm >=10.26 / 11 / 12
 allowBuilds:
   electron: true
   esbuild: true
   electron-winstaller: false
+
+# pnpm <10.26 fallback
+onlyBuiltDependencies:
+  - electron
+  - esbuild
+
+ignoredBuiltDependencies:
+  - electron-winstaller
