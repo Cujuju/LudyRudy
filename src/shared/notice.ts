@@ -4,6 +4,10 @@ import { darkTheme, resolveTheme, type Palette } from './themes';
 
 export const NOTICE_KINDS = {
   daemonError: { tone: 'error', tag: 'DAEMON' },
+  daemonCrashed: { tone: 'error', tag: 'DAEMON' },
+  mountFailed: { tone: 'error', tag: 'MOUNT' },
+  jobCompleted: { tone: 'ok', tag: 'JOB' },
+  jobFailed: { tone: 'error', tag: 'JOB' },
   mountReady: { tone: 'ok', tag: 'MOUNT' },
   transferDone: { tone: 'ok', tag: 'TRANSFER' },
 } as const;

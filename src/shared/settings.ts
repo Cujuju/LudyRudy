@@ -3,16 +3,16 @@ import { SYSTEM_THEME, THEME_CHOICES } from './themes';
 import { VFS_CACHE_MODES, type MountProfile, type SyncJob } from './types';
 
 export interface AppSettings {
-  general: { theme: string; closeToTray: boolean; minimizeToTray: boolean; sidebarCollapsed: boolean };
-  daemon: { binaryPath: string; configPath: string; endpoint: string };
+  general: { theme: string; closeToTray: boolean; minimizeToTray: boolean; sidebarCollapsed: boolean; launchAtLogin: boolean; startMinimized: boolean };
+  daemon: { binaryPath: string; configPath: string; endpoint: string; autoStart: boolean; defaultVfsCacheMode: MountProfile['vfsCacheMode']; defaultCacheDir: string; bwLimit: string };
   notifications: NoticeConfig & { daemonErrors: boolean };
   mounts: MountProfile[];
   jobs: SyncJob[];
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
-  general: { theme: SYSTEM_THEME, closeToTray: false, minimizeToTray: false, sidebarCollapsed: false },
-  daemon: { binaryPath: '', configPath: '', endpoint: '' },
+  general: { theme: SYSTEM_THEME, closeToTray: false, minimizeToTray: false, sidebarCollapsed: false, launchAtLogin: false, startMinimized: false },
+  daemon: { binaryPath: '', configPath: '', endpoint: '', autoStart: true, defaultVfsCacheMode: 'off', defaultCacheDir: '', bwLimit: 'off' },
   notifications: { ...DEFAULT_NOTICE_CONFIG, daemonErrors: true },
   mounts: [], jobs: [],
 };
@@ -31,6 +31,7 @@ function normalizeMounts(raw: unknown): MountProfile[] {
     vfsCacheMode: VFS_CACHE_MODES.find((mode) => mode === item.vfsCacheMode) ?? 'off',
     vfsCacheMaxSize: string(item.vfsCacheMaxSize), vfsCacheMaxAge: string(item.vfsCacheMaxAge),
     readOnly: bool(item.readOnly), extraFlags: strings(item.extraFlags),
+    ...(typeof item.mountType === 'string' ? { mountType: item.mountType } : {}),
   }));
 }
 
@@ -52,8 +53,14 @@ export function normalizeSettings(raw: unknown): AppSettings {
       theme: THEME_CHOICES.find((theme) => theme === general.theme) ?? DEFAULT_SETTINGS.general.theme,
       closeToTray: bool(general.closeToTray), minimizeToTray: bool(general.minimizeToTray),
       sidebarCollapsed: bool(general.sidebarCollapsed),
+      launchAtLogin: bool(general.launchAtLogin), startMinimized: bool(general.startMinimized),
     },
-    daemon: { binaryPath: string(daemon.binaryPath), configPath: string(daemon.configPath), endpoint: string(daemon.endpoint) },
+    daemon: {
+      binaryPath: string(daemon.binaryPath), configPath: string(daemon.configPath), endpoint: string(daemon.endpoint),
+      autoStart: bool(daemon.autoStart, DEFAULT_SETTINGS.daemon.autoStart),
+      defaultVfsCacheMode: VFS_CACHE_MODES.find((mode) => mode === daemon.defaultVfsCacheMode) ?? DEFAULT_SETTINGS.daemon.defaultVfsCacheMode,
+      defaultCacheDir: string(daemon.defaultCacheDir), bwLimit: string(daemon.bwLimit, DEFAULT_SETTINGS.daemon.bwLimit),
+    },
     notifications: { ...normalizeNoticeConfig(notifications), daemonErrors: bool(notifications.daemonErrors, true) },
     mounts: normalizeMounts(value.mounts),
     jobs: normalizeJobs(value.jobs),

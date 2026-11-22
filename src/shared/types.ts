@@ -8,6 +8,7 @@ export interface DaemonStatus {
   configPath: string | null;
   configEncrypted: boolean | null;
   attached: boolean;
+  mode: 'attached' | 'managed';
   error: string | null;
 }
 
@@ -35,6 +36,7 @@ export interface ProviderInfo {
   prefix: string;
   description: string;
   isOAuth: boolean;
+  popular: boolean;
   isCrypt: boolean;
   options: Record<string, unknown>[];
 }
@@ -53,6 +55,7 @@ export interface MountProfile {
   vfsCacheMaxAge: string;
   readOnly: boolean;
   extraFlags: string[];
+  mountType?: string;
 }
 
 export interface ActiveMount {
@@ -127,4 +130,40 @@ export interface LogLine {
   level: 'info' | 'warn' | 'error';
   message: string;
   source: 'app' | 'rclone';
+}
+
+export interface AuthSession {
+  id: string;
+  provider: string;
+  state: 'starting' | 'awaiting' | 'completed' | 'failed' | 'cancelled';
+  url: string | null;
+  error: string | null;
+}
+
+export type RemoteParameters = Record<string, string | boolean | number>;
+export interface RemoteDraft {
+  name: string;
+  type: string;
+  parameters: RemoteParameters;
+  authSessionId?: string;
+}
+
+export interface CryptDraft {
+  name: string;
+  targetRemote: string;
+  targetPath: string;
+  password: string;
+  salt?: string;
+  filenameEncryption: 'standard' | 'obfuscate' | 'off';
+  directoryNameEncryption: boolean;
+}
+
+export interface CompletedTransfer {
+  name: string;
+  size: number;
+  bytes: number;
+  checked: boolean;
+  startedAt: string;
+  completedAt: string;
+  failed: boolean;
 }

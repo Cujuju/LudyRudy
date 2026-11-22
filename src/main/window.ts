@@ -20,6 +20,7 @@ let window: BrowserWindow | null = null;
 let quitting = false;
 let canHideToTray = false;
 export const enableTrayHiding = () => { canHideToTray = true; };
+export const isQuitting = () => quitting;
 export const markQuitting = () => { quitting = true; };
 export const mainWindow = () => window;
 const background = () => resolveTheme(getSettings().general.theme, nativeTheme.shouldUseDarkColors).palette.background;
@@ -58,7 +59,9 @@ export function loadRendererPage(win: BrowserWindow, page: 'index.html' | 'notic
   win.webContents.on('will-navigate', (event) => event.preventDefault());
   const url = !app.isPackaged && process.env.ELECTRON_RENDERER_URL;
   const loading = url ? win.loadURL(new URL(page, url).href) : win.loadFile(join(import.meta.dirname, '../renderer', page));
-  void loading.catch((error: unknown) => console.error(`[window] Could not load ${page}:`, error));
+  void loading.catch((error: unknown) => {
+    if (!quitting && !win.isDestroyed()) console.error(`[window] Could not load ${page}:`, error);
+  });
 }
 
 export function showMainWindow(): void {
@@ -68,7 +71,7 @@ export function showMainWindow(): void {
   window.focus();
 }
 
-export function createMainWindow(): void {
+export function createMainWindow(startMinimized = false): void {
   const { bounds, maximized } = loadState();
   const win = new BrowserWindow({
     ...bounds, minWidth: MIN_WIDTH, minHeight: MIN_HEIGHT, show: false,
@@ -108,6 +111,9 @@ export function createMainWindow(): void {
     clearTimeout(saveTimer);
     if (!quitting && !isMac) app.quit();
   });
-  win.once('ready-to-show', () => win.show());
+  win.once('ready-to-show', () => {
+    if (!startMinimized || !canHideToTray) win.show();
+    if (startMinimized && !canHideToTray) win.minimize();
+  });
   loadRendererPage(win, 'index.html');
 }

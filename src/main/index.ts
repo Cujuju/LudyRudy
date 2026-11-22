@@ -1,16 +1,34 @@
 import './identity';
-import { app, nativeTheme } from 'electron';
+import { app, nativeTheme, shell } from 'electron';
 import { EVENTS } from '@shared/ipc';
 import { appNotice } from '@shared/notice';
 import { installAppMenu } from './appMenu';
-import { openDaemon } from './daemon';
 import { registerIpc } from './ipc';
+import { openJobManager } from './jobManager';
+import { openMountManager, type Notify } from './mountManager';
 import { startNotices } from './notifier';
-import { getSettings, onSettingsChange } from './settingsStore';
+import { openAuth } from './rcloneAuth';
+import { errorMessage, openDaemon } from './rcloneSupervisor';
+import { openRemotes } from './remoteService';
+import { getSettings, onSettingsChange, updateSettings } from './settingsStore';
 import { createTray } from './tray';
-import { createMainWindow, mainWindow, markQuitting, showMainWindow, syncWindowBackground } from './window';
+import { createMainWindow, isQuitting, mainWindow, markQuitting, showMainWindow, syncWindowBackground } from './window';
 
-const POLL_INTERVAL_MS = 5_000;
+const POLL_INTERVAL_MS = 2_000;
+let lastLoginSettings: string | undefined;
+const LOGIN_MINIMIZED_ARG = '--login-minimized';
+
+function applyLoginSettings(): void {
+  if (!app.isPackaged || app.commandLine.hasSwitch('user-data-dir') || process.platform === 'linux') return;
+  const { launchAtLogin, startMinimized } = getSettings().general;
+  const signature = JSON.stringify([launchAtLogin, startMinimized]);
+  if (lastLoginSettings === signature) return;
+  app.setLoginItemSettings({
+    openAtLogin: launchAtLogin,
+    ...(process.platform === 'win32' ? { args: startMinimized ? [LOGIN_MINIMIZED_ARG] : [] } : {}),
+  });
+  lastLoginSettings = signature;
+}
 
 if (!app.requestSingleInstanceLock()) app.quit();
 else {
@@ -19,35 +37,79 @@ else {
   app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
 
   void app.whenReady().then(() => {
-    const daemon = openDaemon();
-    const notify = startNotices();
-    const updateTray = createTray();
-    let announcedError: string | null = null;
+    const send = (channel: string, payload: unknown) => {
+      if (!isQuitting()) mainWindow()?.webContents.send(channel, payload);
+    };
+    const sendNotice = startNotices();
+    const notify: Notify = (kind, title, body) => sendNotice(appNotice(kind, { title, body }));
+    const daemon = openDaemon({
+      log: (entry) => send(EVENTS.onLog, entry), change: () => publish(),
+      crashed: () => {
+        if (getSettings().notifications.daemonErrors) notify('daemonCrashed', 'rclone stopped unexpectedly', 'Restart the daemon to reconnect.');
+      },
+      ready: () => {
+        void mounts.autoMount().then(() => refresh()).catch(report);
+      },
+    });
+    const auth = openAuth((session) => send(EVENTS.onAuth, session));
+    const remotes = openRemotes(daemon.client, auth);
+    const mounts = openMountManager({
+      client: daemon.client, profiles: () => getSettings().mounts, save: (mounts) => { updateSettings({ mounts }); },
+      defaults: () => getSettings().daemon.defaultVfsCacheMode, managed: () => daemon.current().daemon.mode === 'managed',
+      reveal: (path) => shell.openPath(path), notify,
+    });
+    const jobs = openJobManager({
+      client: daemon.client, jobs: () => getSettings().jobs, save: (jobs) => { updateSettings({ jobs }); },
+      notify, change: () => publish(),
+    });
+    const current = () => ({ ...daemon.current(), jobRuns: jobs.runs() });
     const refresh = async () => {
-      const snapshot = await daemon.refresh();
-      updateTray?.(snapshot.daemon.state);
-      mainWindow()?.webContents.send(EVENTS.onSnapshot, snapshot);
-      const { error } = snapshot.daemon;
-      if (error && error !== announcedError && getSettings().notifications.daemonErrors) {
-        notify(appNotice('daemonError', { title: 'rclone connection failed', body: error }));
+      await Promise.all([daemon.refresh(), jobs.poll()]);
+      return publish();
+    };
+
+    const report = (error: unknown) => console.error('[rclone]', errorMessage(error));
+    const updateTray = createTray(daemon, mounts, () => { void refresh().catch(report); }, report);
+    let announcedError: string | null = null;
+    function publish() {
+      const snapshot = current();
+      send(EVENTS.onSnapshot, snapshot);
+      updateTray?.(snapshot, getSettings().mounts);
+      const { error, mode } = snapshot.daemon;
+      if (mode === 'attached' && error && error !== announcedError && getSettings().notifications.daemonErrors) {
+        notify('daemonError', 'rclone connection failed', error);
       }
       announcedError = error;
       return snapshot;
-    };
-    const poll = () => { void refresh().catch((error: unknown) => console.error('[rclone]', error)); };
-    updateTray?.(daemon.current().daemon.state);
+    }
+
     installAppMenu();
-    registerIpc(daemon, refresh);
+    registerIpc({ daemon, mounts, jobs, auth, remotes, current, refresh });
     onSettingsChange((settings) => {
+      applyLoginSettings();
       syncWindowBackground();
-      mainWindow()?.webContents.send(EVENTS.onSettings, settings);
+      send(EVENTS.onSettings, settings);
+      publish();
     });
     nativeTheme.on('updated', syncWindowBackground);
-    createMainWindow();
+    applyLoginSettings();
+    const minimized = process.argv.includes(LOGIN_MINIMIZED_ARG) || (process.platform === 'darwin' && app.isPackaged
+      && getSettings().general.startMinimized && app.getLoginItemSettings().wasOpenedAtLogin);
+    createMainWindow(minimized);
     app.on('activate', showMainWindow);
-    poll();
-    const timer = setInterval(poll, POLL_INTERVAL_MS);
-    app.once('before-quit', () => clearInterval(timer));
+    publish();
+    if (daemon.current().daemon.mode === 'attached' || getSettings().daemon.autoStart) void daemon.start().catch(report);
+    const timer = setInterval(() => { void refresh().catch(report); }, POLL_INTERVAL_MS);
+    let shutdown: Promise<void> | undefined;
+    app.on('before-quit', (event) => {
+      event.preventDefault();
+      clearInterval(timer);
+      shutdown ??= Promise.allSettled([auth.stop(), daemon.stop()]).then((results) => {
+        for (const result of results) if (result.status === 'rejected') report(result.reason);
+        // A second quit request can be ignored during system-initiated termination.
+        app.exit(results.some((result) => result.status === 'rejected') ? 1 : 0);
+      });
+    });
   }).catch((error: unknown) => {
     console.error('[startup]', error);
     app.exit(1);

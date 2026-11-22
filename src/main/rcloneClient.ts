@@ -1,4 +1,4 @@
-import type { ActiveMount, RemoteEntry, RemoteQuota, RemoteSummary, TransferStats } from '@shared/types';
+import type { ActiveMount, CompletedTransfer, RemoteParameters, RemoteEntry, RemoteQuota, RemoteSummary, TransferStats, MountProfile } from '@shared/types';
 
 export interface RcItem { Path: string; Name: string; Size: number; MimeType?: string; ModTime?: string; IsDir: boolean }
 interface RcMount { Fs: string; MountPoint: string; MountedOn?: string }
@@ -6,33 +6,77 @@ interface RcStats extends Omit<TransferStats, 'bwLimit' | 'transferring'> { tran
 type ConfigDump = Record<string, Record<string, string>>;
 type NoParams = Record<string, never>;
 
+type RcResult = Record<string, unknown>;
+export interface RcFile { fs: string; remote: string }
+export interface RcCopyFile { srcFs: string; srcRemote: string; dstFs: string; dstRemote: string }
+export interface RcMountOptions {
+  fs: string;
+  mountPoint: string;
+  mountType?: string;
+  mountOpt?: Record<string, string | boolean | number | string[]>;
+  vfsOpt?: { CacheMode: MountProfile['vfsCacheMode']; CacheMaxSize?: string; CacheMaxAge?: string; ReadOnly: boolean };
+}
+interface RcConfig { name: string; parameters: RemoteParameters; opt: { obscure: boolean; nonInteractive?: boolean } }
+interface RcSync { srcFs: string; dstFs: string; _async: true; _config: { DryRun: boolean }; _filter: { ExcludeRule: string[] } }
+interface RcJobStatus { executeId?: string; finished: boolean; success: boolean; error?: string }
+interface RcTransfer { name: string; size: number; bytes: number; checked: boolean; started_at: string; completed_at: string; error?: string }
+type VfsTarget = { fs?: string };
+type VfsPaths = VfsTarget & Record<string, string | boolean | undefined>;
+
 interface RcMethods {
-  'rc/noop': [Record<string, unknown>, Record<string, unknown>];
+  'rc/noop': [RcResult, RcResult];
   'core/version': [NoParams, { version: string; os?: string }];
   'core/pid': [NoParams, { pid: number }];
+  'core/quit': [NoParams, RcResult];
   'core/stats': [NoParams, RcStats];
-  'core/transferred': [NoParams, { transferred: unknown[] }];
+  'core/stats-reset': [NoParams, RcResult];
+  'core/transferred': [NoParams, { transferred: RcTransfer[] | null }];
   'core/bwlimit': [{ rate?: string }, { rate: string }];
   'config/listremotes': [NoParams, { remotes: string[] | null }];
   'config/dump': [NoParams, ConfigDump];
-  'config/paths': [NoParams, { config: string }];
+  'config/paths': [NoParams, { config: string; cache?: string }];
   'config/providers': [NoParams, { providers: Record<string, unknown>[] }];
-  'mount/listmounts': [NoParams, { mountPoints: RcMount[] }];
-  'mount/mount': [{ fs: string; mountPoint: string }, { mountPoint: string }];
-  'mount/unmount': [{ mountPoint: string }, Record<string, never>];
-  'operations/list': [{ fs: string; remote: string }, { list: RcItem[] | null }];
+  'config/create': [RcConfig & { type: string }, RcResult];
+  'config/update': [RcConfig, RcResult];
+  'config/delete': [{ name: string }, RcResult];
+  'mount/listmounts': [NoParams, { mountPoints: RcMount[] | null }];
+  'mount/types': [NoParams, { mountTypes: string[] | null }];
+  'mount/mount': [RcMountOptions, { mountPoint: string }];
+  'mount/unmount': [{ mountPoint: string }, RcResult];
+  'mount/unmountall': [NoParams, RcResult];
+  'vfs/list': [NoParams, { vfses: string[] | null }];
+  'vfs/stats': [VfsTarget, RcResult];
+  'vfs/refresh': [VfsPaths, RcResult];
+  'vfs/forget': [VfsPaths, RcResult];
+  'operations/list': [RcFile, { list: RcItem[] | null }];
   'operations/about': [{ fs: string }, Partial<RemoteQuota>];
-  'job/list': [NoParams, { jobids: number[] }];
+  'operations/stat': [RcFile, { item: RcItem | null }];
+  'operations/mkdir': [RcFile, RcResult];
+  'operations/deletefile': [RcFile, RcResult];
+  'operations/purge': [RcFile, RcResult];
+  'operations/copyfile': [RcCopyFile, RcResult];
+  'operations/movefile': [RcCopyFile, RcResult];
+  'sync/copy': [RcSync, { jobid: number; executeId?: string }];
+  'sync/sync': [RcSync, { jobid: number; executeId?: string }];
+  'job/list': [NoParams, { jobids: number[]; executeId?: string }];
+  'job/status': [{ jobid: number }, RcJobStatus];
+  'job/stop': [{ jobid: number }, RcResult];
 }
 
 const REQUEST_TIMEOUT_MS = 5_000;
+const FILE_MUTATION_TIMEOUT_MS = 30 * 60_000;
+const FILE_MUTATIONS = new Set<keyof RcMethods>(['operations/copyfile', 'operations/movefile', 'operations/purge']);
+const MOUNT_TIMEOUT_MS = 60_000;
 const SAFE_CONFIG_KEYS = ['type', 'provider', 'region', 'filename_encryption', 'directory_name_encryption'];
 const REMOTE_NAME = '[\\p{L}\\p{N}_.+@]+(?:[ -]+[\\p{L}\\p{N}_.+@-]+)*';
+const VALID_REMOTE_NAME = new RegExp(`^(?:${REMOTE_NAME})$(?![\\s\\S])`, 'u');
+export const validRemoteName = (name: unknown): name is string => typeof name === 'string' && VALID_REMOTE_NAME.test(name)
+  && !(process.platform === 'win32' && /^[a-z]$/i.test(name));
 const PLAIN_TARGET = new RegExp(`^(${REMOTE_NAME}):`, 'u');
 const INLINE_TARGET = new RegExp(`^(:?${REMOTE_NAME})[,:]`, 'u');
 const DRIVE_PATH = /^[a-z]:[\\/]/i;
 
-function describeFs(fs: string, windows: boolean): { remote: string | null; path: string | null; display: string } {
+export function describeFs(fs: string, windows: boolean): { remote: string | null; path: string | null; display: string } {
   if (windows && DRIVE_PATH.test(fs)) return { remote: null, path: fs, display: fs };
   const remote = PLAIN_TARGET.exec(fs)?.[1];
   if (remote) return { remote, path: fs.slice(remote.length + 1), display: fs };
@@ -66,7 +110,8 @@ export class RcloneClient {
   }
 
   async call<K extends keyof RcMethods>(method: K, ...args: {} extends RcMethods[K][0] ? [RcMethods[K][0]?] : [RcMethods[K][0]]): Promise<RcMethods[K][1]> {
-    const signal = AbortSignal.timeout(REQUEST_TIMEOUT_MS);
+    const timeout = FILE_MUTATIONS.has(method) ? FILE_MUTATION_TIMEOUT_MS : method === 'mount/mount' ? MOUNT_TIMEOUT_MS : REQUEST_TIMEOUT_MS;
+    const signal = AbortSignal.timeout(timeout);
     const response = await fetch(new URL(method, this.endpoint), {
       method: 'POST', headers: this.headers, signal, redirect: 'error', body: JSON.stringify(args[0] ?? {}),
     }).catch(() => {
@@ -111,16 +156,25 @@ export class RcloneClient {
 
   async mounts(windows = false): Promise<ActiveMount[]> {
     const { mountPoints } = await this.call('mount/listmounts');
-    return mountPoints.map(({ Fs, MountPoint, MountedOn }) => ({
+    return (mountPoints ?? []).map(({ Fs, MountPoint, MountedOn }) => ({
       profileId: null, fs: describeFs(Fs, windows).display, mountPoint: MountPoint, mountedOn: MountedOn ?? null, status: 'mounted',
     }));
   }
 
   async list(remote: string, path: string): Promise<RemoteEntry[]> {
     const { list } = await this.call('operations/list', { fs: remoteFs(remote), remote: path });
-    return (list ?? []).map((item) => ({
-      path: item.Path, name: item.Name, size: item.Size, mimeType: item.MimeType ?? '',
-      modTime: item.ModTime ?? '', isDir: item.IsDir,
+    return (list ?? []).map(toRemoteEntry);
+  }
+
+  async stat(remote: string, path: string): Promise<RemoteEntry | null> {
+    const { item } = await this.call('operations/stat', { fs: remoteFs(remote), remote: path });
+    return item ? toRemoteEntry(item) : null;
+  }
+
+  async transferred(): Promise<CompletedTransfer[]> {
+    const { transferred } = await this.call('core/transferred');
+    return (transferred ?? []).map(({ name, size, bytes, checked, started_at, completed_at, error }) => ({
+      name, size, bytes, checked, startedAt: started_at, completedAt: completed_at, failed: !!error,
     }));
   }
 
@@ -128,4 +182,11 @@ export class RcloneClient {
     const { total, used, free, trashed, other } = await this.call('operations/about', { fs: remoteFs(remote) });
     return { total: total ?? null, used: used ?? null, free: free ?? null, trashed: trashed ?? null, other: other ?? null };
   }
+}
+
+function toRemoteEntry(item: RcItem): RemoteEntry {
+  return {
+    path: item.Path, name: item.Name, size: item.Size, mimeType: item.MimeType ?? '',
+    modTime: item.ModTime ?? '', isDir: item.IsDir,
+  };
 }

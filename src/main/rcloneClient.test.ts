@@ -51,3 +51,38 @@ describe('remote config projection', () => {
     expect(JSON.stringify(vault)).not.toContain(secret);
   });
 });
+
+describe('expanded RC transport', () => {
+  it('posts optional options, filters, and job identifiers using the RC wire format', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>().mockImplementation(async () => Response.json({}));
+    vi.stubGlobal('fetch', fetch);
+    const client = new RcloneClient('http://localhost:5572');
+    await client.call('config/update', { name: 'vault', parameters: { directory_name_encryption: true }, opt: { obscure: true } });
+    await client.call('mount/mount', { fs: 'vault:', mountPoint: '/mnt/vault', mountType: 'mount', vfsOpt: { CacheMode: 'writes', ReadOnly: false } });
+    await client.call('operations/copyfile', { srcFs: 'vault:', srcRemote: 'a', dstFs: 'drive:', dstRemote: 'b' });
+    await client.call('sync/sync', {
+      srcFs: 'vault:', dstFs: 'drive:', _async: true, _config: { DryRun: true }, _filter: { ExcludeRule: ['*.tmp'] },
+    });
+    await client.call('job/stop', { jobid: 12 });
+    await client.call('core/quit');
+    expect(fetch.mock.calls.map(([url, request]) => [new URL(String(url)).pathname, JSON.parse(String(request?.body))])).toEqual([
+      ['/config/update', { name: 'vault', parameters: { directory_name_encryption: true }, opt: { obscure: true } }],
+      ['/mount/mount', { fs: 'vault:', mountPoint: '/mnt/vault', mountType: 'mount', vfsOpt: { CacheMode: 'writes', ReadOnly: false } }],
+      ['/operations/copyfile', { srcFs: 'vault:', srcRemote: 'a', dstFs: 'drive:', dstRemote: 'b' }],
+      ['/sync/sync', { srcFs: 'vault:', dstFs: 'drive:', _async: true, _config: { DryRun: true }, _filter: { ExcludeRule: ['*.tmp'] } }],
+      ['/job/stop', { jobid: 12 }],
+      ['/core/quit', {}],
+    ]);
+  });
+
+  it('omits transfer engine errors and inline FS parameters from projections', async () => {
+    const secret = crypto.randomUUID();
+    vi.stubGlobal('fetch', vi.fn<typeof globalThis.fetch>()
+      .mockResolvedValueOnce(Response.json({ transferred: [{ name: 'file.txt', size: 10, bytes: 0, checked: false, error: secret, srcFs: `:s3,token=${secret}:.` }] }))
+      .mockResolvedValueOnce(Response.json({ mountPoints: [{ Fs: `:s3,token=${secret}:.`, MountPoint: '/mnt/s3' }] })));
+    const client = new RcloneClient('http://localhost:5572');
+    const data = [await client.transferred(), await client.mounts()];
+    expect(data).toMatchObject([[{ name: 'file.txt', failed: true }], [{ fs: ':s3' }]]);
+    expect(JSON.stringify(data)).not.toContain(secret);
+  });
+});

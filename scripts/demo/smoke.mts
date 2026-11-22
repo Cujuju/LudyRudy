@@ -44,6 +44,44 @@ export async function smoke(): Promise<string[]> {
       await until(`${label} content`, () => matches(`document.querySelector('main h1')?.textContent === ${JSON.stringify(label)} &&
         document.querySelector('main')?.textContent.includes(${JSON.stringify(LIVE_CONTENT[label])})`), abort);
     }
+    const verified = await page.eval<boolean>(`(async () => {
+      const api = window.api;
+      const mountPoint = '${process.platform === 'win32' ? 'Z:/' : '/demo/smoke'}';
+      const options = { name: 'Smoke', remote: 'smoke-files', remotePath: '', mountPoint, autoMount: false,
+        vfsCacheMaxSize: '', vfsCacheMaxAge: '', readOnly: true, extraFlags: [] };
+      await api.createRemote({ name: 'smoke-files', type: 'memory', parameters: {} });
+      await api.createCryptRemote({ name: 'smoke-vault', targetRemote: 'smoke-files', targetPath: 'vault',
+        password: await api.generateSecret(), filenameEncryption: 'standard', directoryNameEncryption: true });
+      await api.updateRemote({ name: 'smoke-vault', type: 'crypt', parameters: { directory_name_encryption: false } });
+      await api.testRemote('smoke-files');
+      await api.mkdir('smoke-files', 'folder');
+      await api.copyFile('gdrive', 'schedule.pdf', 'smoke-files', 'folder/copy.pdf');
+      await api.moveFile('smoke-files', 'folder/copy.pdf', 'smoke-files', 'folder/moved.pdf');
+      if (!(await api.stat('smoke-files', 'folder/moved.pdf')) || (await api.stat('smoke-files', 'folder/copy.pdf'))) return false;
+      await api.deleteFile('smoke-files', 'folder/moved.pdf');
+      await api.purge('smoke-files', 'folder');
+      if (await api.stat('smoke-files', 'folder')) return false;
+      const profile = await api.saveMountProfile(options);
+      const mounted = await api.mountProfile(profile.id);
+      if (!(await api.listVfs()).includes('smoke-files:')) return false;
+      await api.vfsStats('smoke-files');
+      await api.vfsRefresh('smoke-files');
+      await api.vfsForget('smoke-files');
+      await api.unmount(mounted);
+      await api.deleteMountProfile(profile.id);
+      const job = await api.saveJob({ name: 'Smoke', mode: 'copy', source: 'gdrive:', destination: 'smoke-files:',
+        excludes: [], dryRunDefault: true, enabled: true });
+      const run = await api.runJob(job.id);
+      if (!run.dryRun) return false;
+      await api.stopJob(run.rcloneJobId);
+      if (await api.bandwidthLimit('1M') !== '1M' || !(await api.completedTransfers()).length) return false;
+      const vault = (await api.refresh()).remotes.find(({ name }) => name === 'smoke-vault');
+      if (vault?.directoryNameEncryption !== false || 'password' in vault.config) return false;
+      await api.deleteRemote('smoke-vault');
+      await api.deleteRemote('smoke-files');
+      return true;
+    })()`);
+    if (!verified) throw new Error('Phase 2 backend smoke assertions failed.');
     const failure = abort();
     if (failure) throw new Error(failure);
     return PAGES;

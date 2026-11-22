@@ -9,8 +9,8 @@ export function Browser(props: PageProps) {
   const [path, setPath] = createSignal('');
   const remotes = () => props.store.snapshot()?.remotes ?? [];
   const remote = createMemo(() => remotes().some(({ name }) => name === selection()) ? selection() : remotes()[0]?.name ?? '');
-  const attached = createMemo(() => props.store.snapshot()?.daemon.attached === true);
-  const request = createMemo(() => attached() && remote() ? { remote: remote(), path: path() } : false);
+  const connected = createMemo(() => props.store.snapshot()?.daemon.state === 'running');
+  const request = createMemo(() => connected() && remote() ? { remote: remote(), path: path() } : false);
   const [entries] = createResource(request, async ({ remote, path }) => {
     try {
       return { request: { remote, path }, items: await window.api.browse(remote, path), error: '' };
@@ -26,7 +26,7 @@ export function Browser(props: PageProps) {
   return (
     <>
       <PageHeader title="Browser" />
-      <Show when={attached() && remotes().length} fallback={<Empty>Connect to rclone to browse a configured remote.</Empty>}>
+      <Show when={connected() && remotes().length} fallback={<Empty>Connect to rclone to browse a configured remote.</Empty>}>
         <div class="row browser-toolbar">
           <label for="remote-select">Remote</label>
           <select id="remote-select" onChange={(event) => {
