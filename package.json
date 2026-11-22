@@ -1,0 +1,44 @@
+{
+  "name": "ludyrudy",
+  "productName": "ludyRudy",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Desktop rclone manager for cloud storage, encrypted remotes, and mounts.",
+  "author": "Cuju Ju",
+  "license": "MIT",
+  "main": "out/main/index.js",
+  "type": "module",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "start": "electron-vite preview",
+    "typecheck": "node scripts/build-linked.mjs && tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
+    "test": "vitest run",
+    "lint": "oxlint --deny-warnings",
+    "rclone:fetch": "node scripts/fetch-rclone.mjs",
+    "package": "pnpm build && electron-builder --config electron-builder.ts --publish never",
+    "package:dir": "pnpm build && electron-builder --config electron-builder.ts --dir --publish never",
+    "demo": "pnpm build && node scripts/demo/main.mts",
+    "smoke": "pnpm build && node scripts/demo/main.mts --smoke"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.2",
+    "electron": "^45.0.0",
+    "electron-builder": "^26.18.0",
+    "electron-vite": "^6.0.0",
+    "eslint-plugin-comment-budget": "github:Cujuju/eslint-plugin-comment-budget",
+    "eslint-plugin-solid": "^0.20.1",
+    "lucide-solid": "^1.61.0",
+    "oxlint": "^1.89.0",
+    "oxlint-tsgolint": "^7.0.2005",
+    "rollup-plugin-license": "3.7.1",
+    "solid-js": "^1.9.17",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.5",
+    "vite-plugin-solid": "^2.11.14",
+    "vitest": "^5.0.5"
+  },
+  "dependencies": {
+    "@cujuju/electron-notices": "link:../solidjs-toolkit/packages/electron-notices"
+  }
+}

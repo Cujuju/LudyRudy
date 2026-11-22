@@ -1,0 +1,44 @@
+:root {
+  --font-text: 'Segoe UI Variable Text', 'Segoe UI', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  --text-xs: 11px;
+  --text-sm: 13px;
+  --text-header: 15px;
+  --text-title: 22px;
+  --text-stat: 25px;
+  --spacing-0_5: 2px;
+  --spacing-1: 4px;
+  --spacing-1_5: 6px;
+  --spacing-2: 8px;
+  --spacing-3: 12px;
+  --spacing-4: 16px;
+  --spacing-5: 20px;
+  --spacing-6: 24px;
+  --border-width: 1px;
+  --radius-xs: 3px;
+  --radius-sm: 4px;
+  --radius-btn: 6px;
+  --radius-card: 10px;
+  --radius-pill: 999px;
+  --titlebar-height: 36px;
+  --traffic-light-reserve: 82px;
+  --sidebar-width: 176px;
+  --sidebar-rail-width: 54px;
+  --nav-btn-size: 36px;
+  --control-height: 32px;
+  --window-control-width: 44px;
+  --page-pad: var(--spacing-6);
+  --page-max: 1100px;
+  --card-gap: var(--spacing-2);
+  --dot-size: 8px;
+  --bar-height: 5px;
+  --scrollbar-size: 10px;
+  --opacity-disabled: .55;
+}
+
+:root, .theme-scope {
+  --color-accent-subtle: color-mix(in srgb, var(--color-accent) 14%, transparent);
+  --color-accent-border: color-mix(in srgb, var(--color-accent) 52%, transparent);
+  --color-nav-hover: color-mix(in srgb, var(--color-surface-input) 45%, transparent);
+  --color-amber-subtle: color-mix(in srgb, var(--color-amber) 13%, transparent);
+  --color-red-subtle: color-mix(in srgb, var(--color-red) 16%, transparent);
+}
