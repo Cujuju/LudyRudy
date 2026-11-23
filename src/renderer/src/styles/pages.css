@@ -157,7 +157,7 @@
 }
 .file-toolbar, .log-toolbar { border-radius: var(--radius-card) var(--radius-card) 0 0; }
 .file-toolbar .search-field, .log-toolbar .search-field { width: 155px; }
-.file-toolbar select { max-width: 235px; }
+.file-toolbar .select-flyout { max-width: 235px; }
 .breadcrumbs {
   justify-content: flex-start;
   padding-block: var(--spacing-2);

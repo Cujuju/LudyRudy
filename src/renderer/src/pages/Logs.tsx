@@ -1,17 +1,17 @@
 import { createMemo, createSignal, For, Show, untrack } from 'solid-js';
 import { Clipboard, Pause, Play } from 'lucide-solid';
 import type { LogLine } from '@shared/types';
-import { Empty, Feedback, PageHeader, SearchField, Segmented, sentenceCase } from '../components/ui';
+import { Empty, Feedback, PageHeader, SearchField, Select, Segmented, sentenceCase } from '../components/ui';
 import { useAction } from '../lib/actions';
 import { formatTime } from '../lib/format';
 import type { PageProps } from '../store';
 
 const LEVELS = ['all', 'info', 'warn', 'error'] as const;
-const SOURCES = ['all', 'rclone', 'app'] as const;
+const SOURCES = [{ value: 'all', label: 'All' }, { value: 'rclone', label: 'rclone' }, { value: 'app', label: 'App' }] as const;
 
 export function Logs(props: PageProps) {
   const [level, setLevel] = createSignal<typeof LEVELS[number]>('all');
-  const [source, setSource] = createSignal<typeof SOURCES[number]>('all');
+  const [source, setSource] = createSignal<typeof SOURCES[number]['value']>('all');
   const [search, setSearch] = createSignal('');
   const [paused, setPaused] = createSignal<LogLine[]>();
   const [cleared, setCleared] = createSignal<LogLine>();
@@ -32,10 +32,7 @@ export function Logs(props: PageProps) {
       <div class="panel log-panel">
         <div class="log-toolbar">
           <Segmented label="Log level" options={LEVELS} value={level()} onChange={setLevel} />
-          <label class="row">Source<select value={source()} onChange={(event) => {
-            const selected = SOURCES.find((item) => item === event.currentTarget.value);
-            if (selected) setSource(selected);
-          }}><option value="all">All</option><option value="rclone">rclone</option><option value="app">App</option></select></label>
+          <label class="row">Source<Select label="Source" value={source()} options={SOURCES} onChange={setSource} /></label>
           <SearchField label="Search logs" value={search()} onInput={setSearch} />
           <div class="actions">
             <button type="button" class="button" onClick={() => setPaused(paused() ? undefined : props.store.logs())}>

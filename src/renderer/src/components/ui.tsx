@@ -1,4 +1,7 @@
-import { createSignal, createUniqueId, For, onCleanup, onMount, Show, type JSX } from 'solid-js';
+import { createSignal, createUniqueId, For, onCleanup, Show, type JSX } from 'solid-js';
+import { Portal } from 'solid-js/web';
+import { createEscapeOwner } from '@cujuju/solidjs-hooks';
+import { Flyout } from '@cujuju/solidjs-select-flyout';
 import { Eye, EyeOff, Search, X } from 'lucide-solid';
 import type { DaemonStatus } from '@shared/types';
 import { useAction } from '../lib/actions';
@@ -51,25 +54,53 @@ export function Confirm(props: { label: string; question: string; disabled?: boo
 }
 
 export function Drawer(props: { title: string; description?: string; busy?: boolean; close: () => void; children: JSX.Element }) {
-  let dialog!: HTMLDialogElement;
+  let panel!: HTMLDialogElement;
   let pressedBackdrop = false;
-  onMount(() => dialog.showModal());
-  onCleanup(() => dialog.close());
+  const root = document.getElementById('root');
+  const previousFocus = document.activeElement;
+  const wasInert = root?.inert ?? false;
+  const dismiss = () => { if (!props.busy) props.close(); };
+  createEscapeOwner({ open: () => true, onDismiss: dismiss });
+  onCleanup(() => {
+    if (root) root.inert = wasInert;
+    if (previousFocus instanceof HTMLElement && previousFocus.isConnected) previousFocus.focus();
+  });
   return (
-    <dialog ref={dialog} class="drawer" aria-label={props.title} onCancel={(event) => {
-      event.preventDefault();
-      if (!props.busy) props.close();
-    }} onPointerDown={(event) => { pressedBackdrop = event.target === dialog; }}
-    onClick={(event) => { if (pressedBackdrop && event.target === dialog && !props.busy) props.close(); }}>
-      <div class="drawer-inner">
-        <header class="section-header">
-          <div><h2>{props.title}</h2><Show when={props.description}><p class="secondary">{props.description}</p></Show></div>
-          <button type="button" class="icon-button" aria-label="Close drawer" disabled={props.busy} onClick={() => props.close()}><X size={18} /></button>
-        </header>
-        {props.children}
+    <Portal ref={() => {
+      if (root) root.inert = true;
+      panel.tabIndex = -1;
+      panel.focus();
+    }}>
+      <div class="drawer-backdrop" onPointerDown={(event) => { pressedBackdrop = event.target === event.currentTarget; }}
+        onClick={(event) => { if (pressedBackdrop && event.target === event.currentTarget) dismiss(); }}>
+        <dialog ref={panel} open class="drawer" role="dialog" aria-modal="true" aria-label={props.title}>
+          <div class="drawer-inner">
+            <header class="section-header">
+              <div><h2>{props.title}</h2><Show when={props.description}><p class="secondary">{props.description}</p></Show></div>
+              <button type="button" class="icon-button" aria-label="Close drawer" disabled={props.busy} onClick={dismiss}><X size={18} /></button>
+            </header>
+            {props.children}
+          </div>
+        </dialog>
       </div>
-    </dialog>
+    </Portal>
   );
+}
+
+export function blurActiveElement() {
+  if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+}
+
+export function Select<T extends string>(props: {
+  id?: string; label: string; value: T; options: readonly { value: T; label: string; disabled?: boolean }[];
+  placeholder?: string; disabled?: boolean; onChange: (value: T) => void;
+}) {
+  return <Flyout id={props.id} ariaLabel={props.label} surface="plain" class="select-flyout"
+    value={props.value} options={[...props.options]} placeholder={props.placeholder} disabled={props.disabled}
+    onChange={(value) => {
+      const option = props.options.find((option) => option.value === value);
+      if (option && !option.disabled) props.onChange(option.value);
+    }} />;
 }
 
 export function Toggle(props: { label: string; hideLabel?: boolean; checked: boolean; disabled?: boolean; onChange: (checked: boolean) => void }) {

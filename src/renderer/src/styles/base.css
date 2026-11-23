@@ -13,13 +13,13 @@ body {
 h1, h2, h3, p, dl, dd { margin: 0; }
 h1 { line-height: 1.2; font-size: var(--text-title); letter-spacing: -.02em; font-weight: 670; }
 h2 { font-size: var(--text-header); font-weight: 650; }
-button, input, select, textarea { font: inherit; color: inherit; }
+button, input, textarea { font: inherit; color: inherit; }
 button { cursor: pointer; }
 button:disabled { opacity: var(--opacity-disabled); cursor: default; }
 :focus-visible { outline: 2px solid var(--color-accent-light); outline-offset: 2px; }
 @media (prefers-reduced-motion: no-preference) {
   .button, .nav-btn, .icon-button, .segmented button, .toggle, .theme-card,
-  input, select, textarea, .input-group, .input-inline-btn, .input-clear, .search-field, .settings-nav button {
+  input, textarea, .input-group, .input-inline-btn, .input-clear, .search-field, .settings-nav button {
     transition: background var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
   }
 }
@@ -32,6 +32,27 @@ button:disabled { opacity: var(--opacity-disabled); cursor: default; }
 .row { display: flex; align-items: center; gap: var(--spacing-2); }
 
 .shell { height: 100%; display: grid; grid-template-rows: var(--titlebar-height) minmax(0, 1fr); }
+.titlebar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: var(--border-width) solid var(--color-border);
+  background: var(--color-surface-sunken);
+  -webkit-app-region: drag;
+}
+.titlebar.mac { padding-inline-start: var(--traffic-light-reserve); }
+.brand { display: flex; align-items: center; gap: var(--spacing-2); padding-inline: var(--spacing-3); font-weight: 650; }
+.window-controls { display: flex; height: 100%; -webkit-app-region: no-drag; }
+.window-controls button {
+  width: var(--window-control-width);
+  display: grid;
+  place-items: center;
+  border: 0;
+  background: transparent;
+}
+.window-controls button:hover { background: var(--color-surface-hover); }
+.window-controls .window-close:hover { color: var(--color-red-light); background: var(--color-red-subtle); }
+
 .shell-body { display: grid; grid-template-columns: max-content minmax(0, 1fr); min-height: 0; }
 .sidebar {
   --sidebar-toggle-size: 20px;

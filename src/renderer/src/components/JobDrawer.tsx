@@ -3,7 +3,7 @@ import { createStore } from 'solid-js/store';
 import { FolderOpen } from 'lucide-solid';
 import type { SyncJob } from '@shared/types';
 import { useAction } from '../lib/actions';
-import { Drawer, Feedback, FormActions, Segmented, sentenceCase, Toggle } from './ui';
+import { blurActiveElement, Drawer, Feedback, FormActions, Segmented, sentenceCase, Toggle } from './ui';
 
 const JOB_MODES = ['copy', 'sync'] as const;
 const JOB_PATHS = ['source', 'destination'] as const;
@@ -19,6 +19,7 @@ export function JobDrawer(props: { job?: SyncJob; attached: boolean; close: () =
 
   function choose(field: 'source' | 'destination') {
     void picker.run(async () => {
+      blurActiveElement();
       const folder = await window.api.pickDirectory();
       if (folder) setDraft(field, folder);
     });
