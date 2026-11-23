@@ -12,10 +12,11 @@ import { Mounts } from './pages/Mounts';
 import { Remotes } from './pages/Remotes';
 import { Settings } from './pages/Settings';
 import { Transfers } from './pages/Transfers';
-import { createAppStore, type PageProps, type SettingsSection } from './store';
+import { createAppStore, SETTINGS_SECTIONS, type PageProps, type SettingsSection } from './store';
 
 const PAGES: Record<Page, Component<PageProps>> = { Dashboard, Remotes, Mounts, Browser, Transfers, Logs, Settings };
 const isPage = (value: unknown): value is Page => typeof value === 'string' && Object.hasOwn(PAGES, value);
+const isSettingsSection = (value: string): value is SettingsSection => (SETTINGS_SECTIONS as readonly string[]).includes(value);
 const isScrollOffset = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value) && value >= 0;
 
 export function App() {
@@ -62,10 +63,14 @@ export function App() {
     observer.observe(content);
     darkMedia.addEventListener('change', onTheme);
     window.addEventListener('keydown', onKey);
+    const unsubOpenSettings = window.api.onOpenSettings((section) => {
+      if (isSettingsSection(section)) openSettings(section);
+    });
     onCleanup(() => {
       observer.disconnect();
       darkMedia.removeEventListener('change', onTheme);
       window.removeEventListener('keydown', onKey);
+      unsubOpenSettings();
     });
   });
 
@@ -89,7 +94,7 @@ export function App() {
         <Sidebar page={page()} collapsed={collapsed()} daemon={store.snapshot()?.daemon} prereqs={store.snapshot()?.prereqs}
           build={store.build()} mounts={store.snapshot()?.mounts.length ?? 0}
           jobs={store.snapshot()?.jobRuns.filter((run) => run.state === 'running').length ?? 0} navigate={navigate}
-          openAbout={() => openSettings('About')} toggle={toggle} />
+          openUpdates={() => openSettings('Updates')} toggle={toggle} />
         <main class="page" ref={scroller} tabindex="-1" aria-label={page()}
           onScroll={rememberScroll}>
           <div class="page-content" ref={content}>

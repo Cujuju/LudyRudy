@@ -71,6 +71,15 @@ export function showMainWindow(): void {
   window.focus();
 }
 
+export function showWindowAndSend(channel: string, payload?: unknown): void {
+  showMainWindow();
+  const win = window;
+  if (!win || win.isDestroyed()) return;
+  const deliver = () => { if (!quitting && !win.isDestroyed()) win.webContents.send(channel, payload); };
+  if (win.webContents.isLoadingMainFrame()) win.webContents.once('did-finish-load', deliver);
+  else deliver();
+}
+
 export function createMainWindow(startMinimized = false): void {
   const { bounds, maximized } = loadState();
   const win = new BrowserWindow({

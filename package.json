@@ -18,8 +18,13 @@
     "rclone:fetch": "node scripts/fetch-rclone.mjs",
     "package": "pnpm build && electron-builder --config electron-builder.ts --publish never",
     "package:dir": "pnpm build && electron-builder --config electron-builder.ts --dir --publish never",
+    "release": "node scripts/release.mts",
     "demo": "pnpm build && node scripts/demo/main.mts",
     "smoke": "pnpm build && node scripts/demo/main.mts --smoke"
+  },
+  "packageManager": "pnpm@12.15.0",
+  "engines": {
+    "node": "^24.0.0"
   },
   "devDependencies": {
     "@types/node": "^24.19.2",
@@ -40,6 +45,7 @@
   },
   "dependencies": {
     "@cujuju/electron-notices": "link:../solidjs-toolkit/packages/electron-notices",
+    "@cujuju/electron-updates": "link:../solidjs-toolkit/packages/electron-updates",
     "@cujuju/solidjs-anchored-popover": "link:../solidjs-toolkit/packages/anchored-popover",
     "@cujuju/solidjs-glass": "link:../solidjs-toolkit/packages/glass",
     "@cujuju/solidjs-glass-menu": "link:../solidjs-toolkit/packages/glass-menu",

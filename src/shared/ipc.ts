@@ -1,7 +1,7 @@
 import type { BuildInfo } from './buildInfo';
 import type { AppSettings } from './settings';
 import type { HourCycle } from './timeFormat';
-import type { ActiveMount, AuthSession, CompletedTransfer, CryptDraft, DaemonStatus, MountProfile, ProviderInfo, RemoteDraft, SyncJob, SyncJobRun, LogLine, PrereqStatus, RemoteEntry, RemoteQuota, RemoteSummary, TransferStats } from './types';
+import type { ActiveMount, AuthSession, CompletedTransfer, CryptDraft, DaemonStatus, MountProfile, ProviderInfo, RemoteDraft, SyncJob, SyncJobRun, LogLine, PrereqStatus, RemoteEntry, RemoteQuota, RemoteSummary, TransferStats, UpdateStatus } from './types';
 
 export const NOTICE_OVERLAY_ARG = '--ludyrudy-notice-overlay';
 
@@ -25,6 +25,11 @@ export interface DesktopApi {
   refresh(): Promise<AppSnapshot>;
   updateGeneral(patch: Partial<AppSettings['general']>): Promise<AppSettings>;
   updateNotifications(patch: Partial<AppSettings['notifications']>): Promise<AppSettings>;
+  updateUpdates(patch: Partial<AppSettings['updates']>): Promise<AppSettings>;
+  updateStatus(): Promise<UpdateStatus>;
+  checkForUpdates(): Promise<void>;
+  downloadUpdate(): Promise<void>;
+  installUpdate(): Promise<void>;
   noticePreview(): Promise<void>;
   updateDaemon(patch: Partial<AppSettings['daemon']>): Promise<AppSettings>;
   startDaemon(): Promise<void>;
@@ -86,6 +91,8 @@ export interface DesktopApi {
   onSnapshot(cb: (snapshot: AppSnapshot) => void): () => void;
   onSettings(cb: (settings: AppSettings) => void): () => void;
   onMaximized(cb: (maximized: boolean) => void): () => void;
+  onUpdateStatus(cb: (status: UpdateStatus) => void): () => void;
+  onOpenSettings(cb: (section: string) => void): () => void;
 }
 
 type Methods = Exclude<keyof DesktopApi, 'platform' | 'arch' | 'hourCycle' | 'noticeOverlaySupported'>;
@@ -95,7 +102,9 @@ type Event = Exclude<Methods, Invoke | Send>;
 
 export const INVOKE = {
   initialize: 'app:initialize', refresh: 'app:refresh', updateGeneral: 'settings:general',
-  updateNotifications: 'settings:notifications', noticePreview: 'notice:preview',
+  updateNotifications: 'settings:notifications', updateUpdates: 'settings:updates',
+  updateStatus: 'updates:status', checkForUpdates: 'updates:check', downloadUpdate: 'updates:download', installUpdate: 'updates:install',
+  noticePreview: 'notice:preview',
   browse: 'remote:browse', quota: 'remote:quota',
   updateDaemon: 'settings:daemon', startDaemon: 'daemon:start', stopDaemon: 'daemon:stop', restartDaemon: 'daemon:restart',
   bandwidthLimit: 'daemon:bandwidth', completedTransfers: 'daemon:transferred', resetStats: 'daemon:reset-stats',
@@ -118,4 +127,5 @@ export const SEND = {
 
 export const EVENTS = {
   onLog: 'daemon:log', onAuth: 'auth:changed', onSnapshot: 'app:snapshot', onSettings: 'settings:changed', onMaximized: 'window:maximized',
+  onUpdateStatus: 'updates:status', onOpenSettings: 'ui:open-settings',
 } as const satisfies Record<Event, string>;

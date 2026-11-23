@@ -1,3 +1,4 @@
+import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { defineConfig } from 'electron-vite';
 import license from 'rollup-plugin-license';
@@ -5,6 +6,9 @@ import solid from 'vite-plugin-solid';
 import { appVersion, gitBuild } from './appVersion.ts';
 
 const root = import.meta.dirname;
+/** Created by `pnpm release keygen`; without it the build cannot verify, so it never updates. */
+const UPDATE_PUBLIC_KEY_FILE = resolve(root, 'resources/update-public-key.pem');
+const updatePublicKey = existsSync(UPDATE_PUBLIC_KEY_FILE) ? readFileSync(UPDATE_PUBLIC_KEY_FILE, 'utf8').trim() : '';
 const shared = { '@shared': resolve(root, 'src/shared') };
 const build = { __APP_VERSION__: JSON.stringify(appVersion(root)), __APP_BUILD__: JSON.stringify(gitBuild(root)) };
 const bundledLicenses = (bundle: string) => license({
@@ -15,11 +19,14 @@ const bundledLicenses = (bundle: string) => license({
 });
 
 export default defineConfig(({ command }) => {
-  const define = { ...build, __DEV_BUILD__: JSON.stringify(command === 'serve') };
+  const devBuild = command === 'serve';
+  const define = { ...build, __DEV_BUILD__: JSON.stringify(devBuild) };
+  // No key, no updates: the production feed would install production, not update the dev build.
+  const mainDefine = { ...define, __UPDATE_PUBLIC_KEY__: JSON.stringify(devBuild ? '' : updatePublicKey) };
   const resolveShared = { alias: shared, conditions: ['cujuju-source'] };
-  const externalizeDeps = { exclude: ['@cujuju/electron-notices'] };
+  const externalizeDeps = { exclude: ['@cujuju/electron-updates', '@cujuju/electron-notices'] };
   return {
-    main: { plugins: [bundledLicenses('main')], resolve: resolveShared, define, build: { externalizeDeps } },
+    main: { plugins: [bundledLicenses('main')], resolve: resolveShared, define: mainDefine, build: { externalizeDeps } },
     preload: {
       plugins: [bundledLicenses('preload')], resolve: resolveShared, define,
       build: { externalizeDeps, rollupOptions: { output: { format: 'cjs', entryFileNames: '[name].cjs' } } },

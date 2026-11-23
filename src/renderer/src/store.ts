@@ -5,7 +5,7 @@ import type { BuildInfo } from '@shared/buildInfo';
 import type { AppSnapshot } from '@shared/ipc';
 import { DEFAULT_SETTINGS, type AppSettings } from '@shared/settings';
 
-export const SETTINGS_SECTIONS = ['General', 'Appearance', 'Daemon & Security', 'Notifications', 'About'] as const;
+export const SETTINGS_SECTIONS = ['General', 'Appearance', 'Daemon & Security', 'Notifications', 'Updates', 'About'] as const;
 export type SettingsSection = typeof SETTINGS_SECTIONS[number];
 
 export function createAppStore() {
@@ -66,6 +66,15 @@ export function createAppStore() {
     }
   }
 
+  async function updateUpdates(patch: Partial<AppSettings['updates']>): Promise<void> {
+    setError('');
+    try {
+      await api.updateUpdates(patch);
+    } catch (cause) {
+      reportError(cause);
+    }
+  }
+
   async function refresh(): Promise<void> {
     if (refreshing()) return;
     setRefreshing(true);
@@ -80,7 +89,7 @@ export function createAppStore() {
   }
 
   return { settings, settingsSection, setSettingsSection, build, snapshot, logs, auth, browserTarget, setBrowserTarget,
-    maximized, ready, error, refreshing, updateGeneral, refresh };
+    maximized, ready, error, refreshing, updateGeneral, updateUpdates, refresh };
 }
 
 export type AppStore = ReturnType<typeof createAppStore>;

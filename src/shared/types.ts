@@ -1,4 +1,5 @@
 import type { MountOptionMap } from './mountOptions';
+export type { UpdateStatus } from '@cujuju/electron-updates';
 
 export interface DaemonStatus {
   state: 'stopped' | 'starting' | 'running' | 'error';

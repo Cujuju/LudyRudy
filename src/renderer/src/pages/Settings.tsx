@@ -3,6 +3,7 @@ import { NOTICE_DELIVERIES, NOTICE_POSITIONS, NOTICE_STYLES } from '@cujuju/elec
 import type { AppSettings } from '@shared/settings';
 import { DaemonSettings } from '../components/DaemonSettings';
 import { ThemePicker } from '../components/ThemePicker';
+import { UpdateSettings } from '../components/UpdateSettings';
 import { Feedback, PageHeader, SectionHeader, Select, sentenceCase, Toggle } from '../components/ui';
 import { useAction } from '../lib/actions';
 import { trayName } from '../lib/platform';
@@ -79,7 +80,7 @@ export function Settings(props: PageProps) {
   const section = () => props.store.settingsSection();
   return (
     <div class="settings-stack">
-      <PageHeader title="Settings" description="Set app preferences, daemon defaults, and notifications." />
+      <PageHeader title="Settings" description="Set app preferences, daemon defaults, notifications, and updates." />
       <nav class="settings-nav" aria-label="Settings sections">
         <For each={SETTINGS_SECTIONS}>{(item) => <button type="button" aria-current={section() === item ? 'page' : undefined}
           onClick={() => props.store.setSettingsSection(item)}>{item}</button>}</For>
@@ -89,6 +90,7 @@ export function Settings(props: PageProps) {
         <Match when={section() === 'Appearance'}><Appearance store={props.store} navigate={props.navigate} /></Match>
         <Match when={section() === 'Daemon & Security'}><DaemonSettings store={props.store} /></Match>
         <Match when={section() === 'Notifications'}><Notifications store={props.store} navigate={props.navigate} /></Match>
+        <Match when={section() === 'Updates'}><UpdateSettings store={props.store} /></Match>
         <Match when={section() === 'About'}>
           <section class="panel">
             <SectionHeader title="About LudyRudy" />

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_SETTINGS, normalizeSettings } from './settings';
+import { DEFAULT_SETTINGS, DEFAULT_UPDATE_INSTALL_MINUTE, normalizeSettings, UPDATE_INSTALL_MODES } from './settings';
 
 describe('normalizeSettings', () => {
   it('creates fresh defaults for an invalid or missing profile', () => {
@@ -37,5 +37,26 @@ describe('normalizeSettings', () => {
     expect(settings.mounts[0]?.mountOpts).toEqual({ CaseInsensitive: 'true', NoAppleDouble: false });
     expect(settings.mounts[0]?.vfsOpts).toEqual({ PollInterval: '30s', ChunkStreams: 3 });
     expect(normalizeSettings(settings)).toEqual(settings);
+  });
+
+  it('normalizes update preferences, channels, install modes, and scheduled minutes', () => {
+    expect(normalizeSettings({}).updates).toEqual({
+      autoCheck: true,
+      autoInstall: 'off',
+      installMinute: DEFAULT_UPDATE_INSTALL_MINUTE,
+      channel: 'stable',
+    });
+    expect(normalizeSettings({ updates: { autoCheck: false, channel: 'nightly' } }).updates).toMatchObject({ autoCheck: false, channel: 'nightly' });
+    expect(normalizeSettings({ updates: { channel: 'beta' } }).updates.channel).toBe('stable');
+    for (const autoInstall of UPDATE_INSTALL_MODES) {
+      expect(normalizeSettings({ updates: { autoInstall } }).updates.autoInstall).toBe(autoInstall);
+    }
+    expect(normalizeSettings({ updates: { autoInstall: 'invalid', installMinute: '03:00' } }).updates).toMatchObject({
+      autoInstall: 'off',
+      installMinute: DEFAULT_UPDATE_INSTALL_MINUTE,
+    });
+    expect(normalizeSettings({ updates: { installMinute: -1 } }).updates.installMinute).toBe(0);
+    expect(normalizeSettings({ updates: { installMinute: 1440 } }).updates.installMinute).toBe(1439);
+    expect(normalizeSettings({ updates: { installMinute: 180.6 } }).updates.installMinute).toBe(181);
   });
 });
