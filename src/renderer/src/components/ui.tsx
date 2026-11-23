@@ -98,7 +98,7 @@ export function blurActiveElement() {
 }
 
 export function Select<T extends string>(props: {
-  id?: string; label: string; value: T; options: readonly { value: T; label: string; disabled?: boolean }[];
+  id?: string; label: string; value: T; options: readonly { value: T; label: string; disabled?: boolean; icon?: () => JSX.Element }[];
   placeholder?: string; disabled?: boolean; onChange: (value: T) => void;
 }) {
   return <Flyout id={props.id} ariaLabel={props.label} surface="plain" class="select-flyout"
