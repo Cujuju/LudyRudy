@@ -12,6 +12,7 @@ import {
 } from '../lib/remoteOptions';
 import { providerName } from '../lib/remotes';
 import type { AppStore } from '../store';
+import { ProviderCatalogDialog } from './ProviderCatalogDialog';
 import { ProviderIcon } from './ProviderIcon';
 import { Drawer, Empty, Feedback, FormActions, SecretInput, Select, Toggle } from './ui';
 
@@ -93,7 +94,7 @@ export function RemoteDrawer(props: { store: AppStore; remote?: RemoteSummary; c
   const [kind, setKind] = createSignal(untrack(() => props.remote?.type ?? ''));
   const [parameters, setParameters] = createSignal<RemoteParameters>({});
   const values = createMemo(() => ({ ...props.remote?.config, ...parameters() }));
-  const [search, setSearch] = createSignal('');
+  const [catalogOpen, setCatalogOpen] = createSignal(false);
   const [session, setSession] = createSignal<AuthSession>();
   const lookup = useAction();
   const authAction = useAction();
@@ -106,9 +107,11 @@ export function RemoteDrawer(props: { store: AppStore; remote?: RemoteSummary; c
   };
   const authActive = () => auth()?.state === 'starting' || auth()?.state === 'awaiting';
   const authComplete = () => auth()?.state === 'completed';
-  const matches = createMemo(() => {
-    const term = search().trim().toLowerCase();
-    return providers().filter((item) => [providerName(item.name), item.name, item.description].some((value) => value.toLowerCase().includes(term)));
+  const popular = createMemo(() => providers().filter((item) => item.popular));
+  const hasMore = createMemo(() => providers().some((item) => !item.popular));
+  const selectedExtra = createMemo(() => {
+    const current = provider();
+    return current && !current.popular ? current : undefined;
   });
   const fields = createMemo(() => (provider()?.options ?? []).filter((option) => option.Name !== 'token'
     && (typeof option.Provider !== 'string' || !option.Provider || !values().provider
@@ -118,14 +121,6 @@ export function RemoteDrawer(props: { store: AppStore; remote?: RemoteSummary; c
   const endpoint = () => grouped().endpoint;
   const common = () => grouped().common;
   const advanced = () => grouped().advanced;
-  const providerOptions = createMemo(() => {
-    const options = matches().map((item) => ({ value: item.name, label: `${providerName(item.name)} / ${item.description}` }));
-    const selected = provider();
-    if (selected && !options.some(({ value }) => value === selected.name)) {
-      options.push({ value: selected.name, label: providerName(selected.name) });
-    }
-    return options;
-  });
   const missingRequiredChoice = () => !props.remote && fields().some((option) => {
     if (!requiresOptionValue(option)) return false;
     const choices = optionChoiceExamples(option);
@@ -189,21 +184,25 @@ export function RemoteDrawer(props: { store: AppStore; remote?: RemoteSummary; c
           <Show when={!props.remote} fallback={
             <p class="row secondary"><ProviderIcon type={kind()} />Provider: {providerName(kind())}</p>
           }>
-            <label class="field">Find a provider<input type="search" placeholder="Search all providers" value={search()}
-              onInput={(event) => setSearch(event.currentTarget.value)} /></label>
-            <Show when={!search().trim() && matches().some((item) => item.popular)}>
-              <div class="provider-picker" role="group" aria-label="Popular providers">
-                <For each={matches().filter((item) => item.popular)}>{(item) => (
-                  <button type="button" class="button" aria-pressed={kind() === item.name} disabled={authActive() || authComplete() || authAction.pending()}
-                    onClick={() => select(item.name)}><ProviderIcon type={item.name} size="sm" />{providerName(item.name)}</button>
-                )}</For>
-              </div>
-            </Show>
-            <label class="field">
-              <span class="row">Provider<Show when={kind()}>{(type) => <ProviderIcon type={type()} />}</Show></span>
-              <Select label="Provider" value={kind()} options={providerOptions()} placeholder="Choose a provider"
-                disabled={authActive() || authComplete() || authAction.pending()} onChange={select} />
-            </label>
+            <div class="field">
+              <span>Provider</span>
+              <Show when={popular().length || hasMore()}>
+                <div class="provider-picker" role="group" aria-label="Popular providers">
+                  <For each={popular()}>{(item) => (
+                    <button type="button" class="button" aria-pressed={kind() === item.name} disabled={authActive() || authComplete() || authAction.pending()}
+                      onClick={() => select(item.name)}><ProviderIcon type={item.name} size="sm" />{providerName(item.name)}</button>
+                  )}</For>
+                  <Show when={selectedExtra()}>{(item) => (
+                    <button type="button" class="button" aria-pressed="true" disabled={authActive() || authComplete() || authAction.pending()}
+                      onClick={() => setCatalogOpen(true)}><ProviderIcon type={item().name} size="sm" />{providerName(item().name)}</button>
+                  )}</Show>
+                  <Show when={hasMore()}>
+                    <button type="button" class="button" disabled={authActive() || authComplete() || authAction.pending()}
+                      onClick={() => setCatalogOpen(true)}>More…</button>
+                  </Show>
+                </div>
+              </Show>
+            </div>
           </Show>
           <Show when={lookup.pending()}><Empty>Loading providers…</Empty></Show>
           <Show when={lookup.error()}><button type="button" class="button" onClick={load}>Retry loading providers</button></Show>
@@ -251,6 +250,10 @@ export function RemoteDrawer(props: { store: AppStore; remote?: RemoteSummary; c
         <FormActions label={props.remote ? 'Save remote' : 'Add remote'} close={props.close} busy={busy()}
           disabled={cannotSave()} />
       </form>
+      <Show when={catalogOpen()}>
+        <ProviderCatalogDialog providers={providers()} selected={kind()}
+          select={(next) => { select(next); setCatalogOpen(false); }} close={() => setCatalogOpen(false)} />
+      </Show>
     </Drawer>
   );
 }
