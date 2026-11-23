@@ -33,7 +33,15 @@ const config: Configuration = {
     target: [{ target: 'dmg', arch: ['arm64', 'x64'] }], icon: 'resources/icon-1024.png',
     category: 'public.app-category.utilities', identity: '-', hardenedRuntime: false,
   },
-  win: { extraResources: rcloneResources('win32'), target: [{ target: 'nsis', arch: 'x64' }], icon: 'resources/icon.ico' },
+  win: {
+    extraResources: rcloneResources('win32'),
+    target: [{ target: 'nsis', arch: 'x64' }],
+    icon: 'resources/icon.ico',
+    extraFiles: [
+      { from: 'resources/ludyRudy.VisualElementsManifest.xml', to: 'ludyRudy.VisualElementsManifest.xml' },
+      { from: 'resources/tiles', to: 'tiles' },
+    ],
+  },
   linux: { extraResources: rcloneResources('linux'), target: [{ target: 'AppImage', arch: 'x64' }], icon: 'resources/icon-1024.png', category: 'Utility' },
 };
 
