@@ -39,6 +39,11 @@
     "vitest": "^5.0.5"
   },
   "dependencies": {
-    "@cujuju/electron-notices": "link:../solidjs-toolkit/packages/electron-notices"
+    "@cujuju/electron-notices": "link:../solidjs-toolkit/packages/electron-notices",
+    "@cujuju/solidjs-anchored-popover": "link:../solidjs-toolkit/packages/anchored-popover",
+    "@cujuju/solidjs-glass": "link:../solidjs-toolkit/packages/glass",
+    "@cujuju/solidjs-glass-menu": "link:../solidjs-toolkit/packages/glass-menu",
+    "@cujuju/solidjs-hooks": "link:../solidjs-toolkit/packages/hooks",
+    "@cujuju/solidjs-select-flyout": "link:../solidjs-toolkit/packages/select-flyout"
   }
 }

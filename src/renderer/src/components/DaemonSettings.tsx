@@ -4,7 +4,7 @@ import { VFS_CACHE_MODES } from '@shared/types';
 import type { AppSettings } from '@shared/settings';
 import type { AppStore } from '../store';
 import { errorMessage, useAction } from '../lib/actions';
-import { Confirm, Feedback, SectionHeader, SecretInput, Segmented, sentenceCase, Toggle } from './ui';
+import { blurActiveElement, Confirm, Feedback, SectionHeader, SecretInput, Segmented, sentenceCase, Toggle } from './ui';
 
 function LocationSetting(props: {
   label: string; value: string; placeholder?: string; save: (value: string) => Promise<unknown>;
@@ -30,6 +30,7 @@ function LocationSetting(props: {
         <Show when={dirty()}><button type="submit" class="button primary input-addon" disabled={action.pending()}>Save</button></Show>
         <Show when={props.choose}>{(choose) => (
           <button type="button" class="button input-addon" aria-label={props.chooseLabel} disabled={action.pending()} onClick={() => void action.run(async () => {
+            blurActiveElement();
             const location = await untrack(() => choose()());
             if (location) {
               setDraft(location);

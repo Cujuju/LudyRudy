@@ -2,9 +2,10 @@ import { createMemo, createResource, createSignal, For, Show, untrack } from 'so
 import { ChevronRight, File, Folder, FolderPlus, LockKeyhole, RefreshCw, Upload } from 'lucide-solid';
 import type { RemoteEntry } from '@shared/types';
 import { Quota } from '../components/Quota';
-import { Confirm, Drawer, Empty, Feedback, FormActions, PageHeader, SearchField } from '../components/ui';
+import { Confirm, Drawer, Empty, Feedback, FormActions, PageHeader, SearchField, Select } from '../components/ui';
 import { errorMessage, useAction } from '../lib/actions';
 import { formatBytes, formatTime } from '../lib/format';
+import { remoteOptions } from '../lib/remotes';
 import type { PageProps } from '../store';
 
 type Edit = { label: string; initial: string; submit: (path: string) => Promise<void> };
@@ -104,9 +105,8 @@ export function Browser(props: PageProps) {
       <Show when={connected() && selection()} fallback={<Empty>Connect to rclone and add a remote to browse files.</Empty>}>
         <section class="panel file-panel">
           <div class="file-toolbar">
-            <label class="row">Remote<select value={selection()} onChange={(event) => go(event.currentTarget.value, '')}>
-              <For each={remotes()}>{(item) => <option value={item.name} selected={selection() === item.name}>{item.name}{item.isCrypt ? ' (encrypted)' : ''}</option>}</For>
-            </select></label>
+            <label class="row">Remote<Select label="Remote" value={selection()} options={remoteOptions(remotes())}
+              onChange={(value) => go(value, '')} /></label>
             <div class="actions">
               <SearchField label="Filter filenames" value={filter()} onInput={setFilter} />
               <button type="button" class="button" onClick={newFolder}><FolderPlus size={15} /> New folder</button>

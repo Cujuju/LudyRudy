@@ -103,6 +103,12 @@ async function verifyUi(page: Cdp, abort: () => string | null) {
   const contains = (label: string, scope = 'main') => until(label, async () => (await page.eval<boolean>(
     `document.querySelector(${JSON.stringify(scope)})?.textContent.includes(${JSON.stringify(label)})`,
   )) || null, abort);
+  const flyout = ':popover-open .cujuju-select-flyout-panel';
+  const escape = async () => {
+    for (const type of ['keyDown', 'keyUp']) {
+      await page.send('Input.dispatchKeyEvent', { type, key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+    }
+  };
 
   await openPage(page, 'Dashboard', abort);
   const sidebarExpanded = (value: boolean) => until('sidebar toggle', async () => (await page.eval<boolean>(
@@ -117,7 +123,13 @@ async function verifyUi(page: Cdp, abort: () => string | null) {
   await openPage(page, 'Dashboard', abort);
   await click('New mount');
   await contains('VFS cache mode', 'dialog[open]');
-  await page.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+  await click('Cache max size', 'dialog[open]');
+  await contains('10 GiB', flyout);
+  await escape();
+  await until('Escape closes only the flyout', async () => (await page.eval<boolean>(
+    `!document.querySelector('${flyout}') && !!document.querySelector('dialog[open]')`,
+  )) || null, abort);
+  await escape();
   await until('mount drawer dismissal', async () => (await page.eval<boolean>('!document.querySelector("dialog[open]")')) || null, abort);
   await click('Check quota');
   await contains('42 GiB used');
@@ -129,18 +141,22 @@ async function verifyUi(page: Cdp, abort: () => string | null) {
   await click('Close drawer', 'dialog[open]');
   await contains('Archive Bucket', archive);
   await click('Edit', archive);
+  const customSize = await page.eval<string>(`document.querySelector('dialog [aria-label="Custom cache max size"]')?.value`);
+  if (customSize !== '4G') throw new Error('Custom cache max size did not initialize.');
+  await click('Cache max size', 'dialog[open]');
+  await contains('10 GiB', flyout);
+  await click('10 GiB', flyout);
+  await contains('10 GiB', 'dialog [aria-label="Cache max size"]');
+  await click('Advanced options', 'dialog[open]');
+  await contains('--direct-io', flyout);
+  await click('Mount · --direct-io — Bypass kernel data caching', flyout);
+  await click('Advanced options', 'dialog[open]');
+  await contains('--dir-cache-time', flyout);
+  await click('VFS · --dir-cache-time — Time to cache directory entries', flyout);
   const editedOptions = await page.eval<boolean>(`(() => {
     const drawer = document.querySelector('dialog[open]');
-    if (drawer.querySelector('[aria-label="Custom cache max size"]')?.value !== '4G') return false;
-    const picker = drawer.querySelector('.input-group select');
-    if (picker.value !== '') return false;
-    const add = (flag) => {
-      picker.value = flag;
-      picker.dispatchEvent(new Event('change', { bubbles: true }));
-    };
-    add('--direct-io');
-    add('--dir-cache-time');
-    if (picker.value !== '' || !drawer.querySelector('[aria-label="--direct-io"]')?.checked) return false;
+    const picker = drawer.querySelector('[aria-label="Advanced options"]');
+    if (!picker.textContent.includes('Add a mount or VFS option…') || !drawer.querySelector('[aria-label="--direct-io"]')?.checked) return false;
     drawer.querySelector('[aria-label="Remove --direct-io"]').click();
     return !drawer.querySelector('[aria-label="--direct-io"]') && drawer.querySelector('[aria-label="--dir-cache-time"]')?.value === '5m';
   })()`);
@@ -148,7 +164,7 @@ async function verifyUi(page: Cdp, abort: () => string | null) {
   await input('dialog [aria-label="--dir-cache-time"]', '10m');
   await click('Save profile', 'dialog[open]');
   await until('mount options saved', async () => (await page.eval<boolean>(`window.api.initialize().then(({settings}) =>
-    settings.mounts.some((mount) => mount.id === 'archive-bucket' && mount.vfsCacheMaxSize === '4G' &&
+    settings.mounts.some((mount) => mount.id === 'archive-bucket' && mount.vfsCacheMaxSize === '10G' &&
       mount.vfsOpts?.DirCacheTime === '10m' && !mount.mountOpts))`)) || null, abort);
   await click('Mount drive', archive);
   await contains('Drive mounted.', archive);

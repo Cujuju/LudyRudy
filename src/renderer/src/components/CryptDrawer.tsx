@@ -1,9 +1,10 @@
-import { For, Show, untrack } from 'solid-js';
+import { Show, untrack } from 'solid-js';
 import { createStore } from 'solid-js/store';
 import { Copy } from 'lucide-solid';
 import type { CryptDraft, RemoteSummary } from '@shared/types';
 import { useAction } from '../lib/actions';
-import { Drawer, Feedback, FormActions, SecretInput, Segmented, Toggle } from './ui';
+import { remoteOptions } from '../lib/remotes';
+import { Drawer, Feedback, FormActions, SecretInput, Select, Segmented, Toggle } from './ui';
 
 const CIPHER_MODES = ['standard', 'obfuscate', 'off'] as const;
 const VAULT_SECRET_BITS = 256;
@@ -15,8 +16,10 @@ export function CryptDrawer(props: { remotes: RemoteSummary[]; target?: string; 
   });
   const action = useAction();
   const tools = useAction();
+  const hasTarget = () => props.remotes.some(({ name }) => name === draft.targetRemote);
 
   async function save() {
+    if (!hasTarget()) return;
     const { mount, ...vault } = draft;
     vault.name = vault.name.trim();
     if (await action.run(() => window.api.createCryptRemote(vault))) props.saved(vault.name, mount);
@@ -30,10 +33,8 @@ export function CryptDrawer(props: { remotes: RemoteSummary[]; target?: string; 
     <Drawer title="Wrap with encryption" description="Create a vault backed by an existing remote." busy={action.pending()} close={props.close}>
       <form class="form-stack" onSubmit={(event) => { event.preventDefault(); void save(); }}>
         <fieldset disabled={action.pending()}>
-          <label class="field">Storage remote<select required value={draft.targetRemote} onChange={(event) => setDraft('targetRemote', event.currentTarget.value)}>
-            <option value="" selected={!draft.targetRemote}>Choose a remote</option>
-            <For each={props.remotes}>{(remote) => <option value={remote.name} selected={draft.targetRemote === remote.name}>{remote.name}{remote.isCrypt ? ' (encrypted)' : ''}</option>}</For>
-          </select></label>
+          <label class="field">Storage remote<Select label="Storage remote" value={hasTarget() ? draft.targetRemote : ''}
+            options={remoteOptions(props.remotes)} placeholder="Choose a remote" onChange={(value) => setDraft('targetRemote', value)} /></label>
           <label class="field">Storage subfolder<input class="path" placeholder="Remote root" value={draft.targetPath}
             onInput={(event) => setDraft('targetPath', event.currentTarget.value)} /></label>
           <label class="field">Vault name<input required value={draft.name} onInput={(event) => setDraft('name', event.currentTarget.value)} /></label>
@@ -61,7 +62,7 @@ export function CryptDrawer(props: { remotes: RemoteSummary[]; target?: string; 
         </fieldset>
         <Feedback action={tools} />
         <Feedback action={action} />
-        <FormActions label="Create vault" busy={action.pending()} disabled={tools.pending()} close={props.close} />
+        <FormActions label="Create vault" busy={action.pending()} disabled={tools.pending() || !hasTarget()} close={props.close} />
       </form>
     </Drawer>
   );

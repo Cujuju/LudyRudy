@@ -3,10 +3,23 @@ import type { AuthSession, ProviderInfo, RemoteParameters, RemoteSummary } from 
 import { useAction } from '../lib/actions';
 import { providerName } from '../lib/remotes';
 import type { AppStore } from '../store';
-import { Drawer, Empty, Feedback, FormActions, SecretInput, Toggle } from './ui';
+import { Drawer, Empty, Feedback, FormActions, SecretInput, Select, Toggle } from './ui';
 
 function isSecret(option: Record<string, unknown>) {
   return option.IsPassword === true || /secret|password|token|pass$|private_key/i.test(String(option.Name));
+}
+
+function isBooleanOption(option: Record<string, unknown>) {
+  return option.Type === 'bool' || typeof option.Default === 'boolean';
+}
+
+function requiresValue(option: Record<string, unknown>) {
+  return option.Required === true && (option.Default === undefined || option.Default === '');
+}
+
+function choiceExamples(option: Record<string, unknown>) {
+  return option.Exclusive === true && Array.isArray(option.Examples) && !isSecret(option) && !isBooleanOption(option)
+    ? option.Examples as { Value: string; Help: string }[] : [];
 }
 
 function ProviderOption(props: {
@@ -15,22 +28,23 @@ function ProviderOption(props: {
   const name = () => String(props.option.Name);
   const initial = () => props.option.Default;
   const value = () => props.value ?? (props.edit ? undefined : initial());
-  const required = () => !props.edit && props.option.Required === true && (initial() === undefined || initial() === '');
-  const examples = () => Array.isArray(props.option.Examples) ? props.option.Examples as { Value: string; Help: string }[] : [];
+  const required = () => !props.edit && requiresValue(props.option);
+  const examples = () => choiceExamples(props.option);
+  const selected = () => examples().some((example) => example.Value === String(value() ?? '')) ? String(value()) : '';
   return (
     <div class="field">
       <Show when={isSecret(props.option)} fallback={
-        <Show when={props.option.Type !== 'bool' && typeof initial() !== 'boolean'} fallback={
+        <Show when={!isBooleanOption(props.option)} fallback={
           <Toggle label={name()} checked={value() === true || value() === 'true'} onChange={props.update} />
         }>
           <label class="field">{name()}
-            <Show when={props.option.Exclusive === true && examples().length > 0} fallback={
+            <Show when={examples().length} fallback={
               <input required={required()} value={String(value() ?? '')} onInput={(event) => props.update(event.currentTarget.value)} />
             }>
-              <select required={required()} value={String(value() ?? '')} onChange={(event) => props.update(event.currentTarget.value)}>
-                <option value="">Select an option</option>
-                <For each={examples()}>{(example) => <option value={example.Value}>{example.Value}{example.Help ? ` / ${example.Help.split('\n')[0]}` : ''}</option>}</For>
-              </select>
+              <Select label={name()} value={selected()} onChange={props.update}
+                options={[{ value: '', label: 'Select an option' }, ...examples().map(({ Value, Help }) => ({
+                  value: Value, label: Help ? `${Value} / ${Help.split('\n')[0]}` : Value,
+                }))]} />
             </Show>
           </label>
         </Show>
@@ -74,6 +88,22 @@ export function RemoteDrawer(props: { store: AppStore; remote?: RemoteSummary; c
       || option.Provider.split(',').includes(String(values().provider)))));
   const common = createMemo(() => fields().filter((option) => option.Advanced !== true || option.Required === true));
   const advanced = createMemo(() => fields().filter((option) => option.Advanced === true && option.Required !== true));
+  const providerOptions = createMemo(() => {
+    const options = matches().map((item) => ({ value: item.name, label: `${providerName(item.name)} / ${item.description}` }));
+    const selected = provider();
+    if (selected && !options.some(({ value }) => value === selected.name)) {
+      options.push({ value: selected.name, label: providerName(selected.name) });
+    }
+    return options;
+  });
+  const missingRequiredChoice = () => !props.remote && fields().some((option) => {
+    if (!requiresValue(option)) return false;
+    const choices = choiceExamples(option);
+    const value = String(values()[String(option.Name)] ?? '');
+    return choices.length > 0 && (!value || !choices.some((example) => example.Value === value));
+  });
+  const cannotSave = () => !provider() || authActive() || authAction.pending() || missingRequiredChoice()
+    || (!!provider()?.isOAuth && !props.remote && !authComplete());
 
   function load() {
     void lookup.run(async () => setProviders(await window.api.listProviders()));
@@ -108,6 +138,7 @@ export function RemoteDrawer(props: { store: AppStore; remote?: RemoteSummary; c
   }
 
   async function save() {
+    if (cannotSave()) return;
     if (await saveAction.run(() => untrack(() => {
       const cleaned = Object.fromEntries(fields().flatMap((option) => {
         const key = String(option.Name);
@@ -136,13 +167,8 @@ export function RemoteDrawer(props: { store: AppStore; remote?: RemoteSummary; c
                 )}</For>
               </div>
             </Show>
-            <label class="field">Provider
-              <select required value={kind()} disabled={authActive() || authComplete() || authAction.pending()} onChange={(event) => select(event.currentTarget.value)}>
-                <option value="">Choose a provider</option>
-                <For each={matches()}>{(item) => <option value={item.name} selected={kind() === item.name}>{providerName(item.name)} / {item.description}</option>}</For>
-                <Show when={provider() && !matches().some((item) => item.name === kind())}><option value={kind()}>{providerName(kind())}</option></Show>
-              </select>
-            </label>
+            <label class="field">Provider<Select label="Provider" value={kind()} options={providerOptions()} placeholder="Choose a provider"
+              disabled={authActive() || authComplete() || authAction.pending()} onChange={select} /></label>
           </Show>
           <Show when={lookup.pending()}><Empty>Loading providers…</Empty></Show>
           <Show when={lookup.error()}><button type="button" class="button" onClick={load}>Retry loading providers</button></Show>
@@ -185,7 +211,7 @@ export function RemoteDrawer(props: { store: AppStore; remote?: RemoteSummary; c
         </fieldset>
         <Feedback action={saveAction} />
         <FormActions label={props.remote ? 'Save remote' : 'Add remote'} close={props.close} busy={busy()}
-          disabled={!provider() || authActive() || authAction.pending() || (!!provider()?.isOAuth && !props.remote && !authComplete())} />
+          disabled={cannotSave()} />
       </form>
     </Drawer>
   );

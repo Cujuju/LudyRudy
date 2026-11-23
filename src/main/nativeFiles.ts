@@ -6,9 +6,20 @@ import { remoteFs } from './rcloneClient';
 import { profileFile } from './paths';
 import { mainWindow } from './window';
 
-function openDialog(options: Electron.OpenDialogOptions): Promise<Electron.OpenDialogReturnValue> {
+async function withDialogFocus<T>(open: (parent: ReturnType<typeof mainWindow>) => Promise<T>): Promise<T> {
   const parent = mainWindow();
-  return parent ? dialog.showOpenDialog(parent, options) : dialog.showOpenDialog(options);
+  try {
+    return await open(parent);
+  } finally {
+    if (parent && !parent.isDestroyed()) {
+      parent.focus();
+      parent.webContents.focus();
+    }
+  }
+}
+
+function openDialog(options: Electron.OpenDialogOptions): Promise<Electron.OpenDialogReturnValue> {
+  return withDialogFocus((parent) => parent ? dialog.showOpenDialog(parent, options) : dialog.showOpenDialog(options));
 }
 
 export function remotePath(path: unknown, allowRoot = false): string {
@@ -56,9 +67,9 @@ export function nativeFiles(daemon: RcloneSupervisor) {
       const rc = localTransfer(remote);
       const fallback = posix.basename(path);
       const defaultPath = win32.basename(suggestedName || fallback).replace(/[\x00-\x1f]/g, '');
-      const parent = mainWindow();
       const options = { defaultPath: defaultPath && !['.', '..'].includes(defaultPath) ? defaultPath : fallback };
-      const { filePath, canceled } = await (parent ? dialog.showSaveDialog(parent, options) : dialog.showSaveDialog(options));
+      const { filePath, canceled } = await withDialogFocus((parent) =>
+        parent ? dialog.showSaveDialog(parent, options) : dialog.showSaveDialog(options));
       if (canceled || !filePath) return false;
       if (rc !== localTransfer(remote)) throw new Error('The rclone daemon changed while choosing where to save the file.');
       await rc.call('operations/copyfile', { srcFs: remoteFs(remote), srcRemote: path, dstFs: dirname(filePath), dstRemote: basename(filePath) });

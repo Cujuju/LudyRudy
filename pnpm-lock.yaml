@@ -11,6 +11,21 @@ importers:
       '@cujuju/electron-notices':
         specifier: link:../solidjs-toolkit/packages/electron-notices
         version: link:../solidjs-toolkit/packages/electron-notices
+      '@cujuju/solidjs-anchored-popover':
+        specifier: link:../solidjs-toolkit/packages/anchored-popover
+        version: link:../solidjs-toolkit/packages/anchored-popover
+      '@cujuju/solidjs-glass':
+        specifier: link:../solidjs-toolkit/packages/glass
+        version: link:../solidjs-toolkit/packages/glass
+      '@cujuju/solidjs-glass-menu':
+        specifier: link:../solidjs-toolkit/packages/glass-menu
+        version: link:../solidjs-toolkit/packages/glass-menu
+      '@cujuju/solidjs-hooks':
+        specifier: link:../solidjs-toolkit/packages/hooks
+        version: link:../solidjs-toolkit/packages/hooks
+      '@cujuju/solidjs-select-flyout':
+        specifier: link:../solidjs-toolkit/packages/select-flyout
+        version: link:../solidjs-toolkit/packages/select-flyout
     devDependencies:
       '@types/node':
         specifier: ^24.19.2

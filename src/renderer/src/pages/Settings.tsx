@@ -3,7 +3,7 @@ import { NOTICE_DELIVERIES, NOTICE_POSITIONS, NOTICE_STYLES } from '@cujuju/elec
 import type { AppSettings } from '@shared/settings';
 import { DaemonSettings } from '../components/DaemonSettings';
 import { ThemePicker } from '../components/ThemePicker';
-import { Feedback, PageHeader, SectionHeader, sentenceCase, Toggle } from '../components/ui';
+import { Feedback, PageHeader, SectionHeader, Select, sentenceCase, Toggle } from '../components/ui';
 import { useAction } from '../lib/actions';
 import { trayName } from '../lib/platform';
 import { SETTINGS_SECTIONS, type PageProps } from '../store';
@@ -15,6 +15,9 @@ const WINDOW_OPTIONS = [
   { key: 'minimizeToTray', label: `Minimize to ${trayName}` },
 ] as const;
 const DELIVERY_NAMES = { overlay: 'In-app overlay', system: 'System notification', both: 'Both' };
+const DELIVERY_OPTIONS = NOTICE_DELIVERIES.map((value) => ({ value, label: DELIVERY_NAMES[value] }));
+const STYLE_OPTIONS = NOTICE_STYLES.map((value) => ({ value, label: sentenceCase(value) }));
+const POSITION_OPTIONS = NOTICE_POSITIONS.map((value) => ({ value, label: sentenceCase(value.replace('-', ' ')) }));
 
 function General(props: PageProps) {
   const general = () => props.store.settings().general;
@@ -46,26 +49,14 @@ function Notifications(props: PageProps) {
     <section class="panel">
       <SectionHeader title="Notifications" />
       <div class="settings-body">
-        <label class="setting-row">Delivery<select disabled={!supported || action.pending()} value={delivery()} onChange={(event) => {
-          const value = NOTICE_DELIVERIES.find((item) => item === event.currentTarget.value);
-          if (value) change({ delivery: value });
-        }}>
-          <For each={NOTICE_DELIVERIES}>{(item) => <option value={item}>{DELIVERY_NAMES[item]}</option>}</For>
-        </select></label>
+        <label class="setting-row">Delivery<Select label="Delivery" disabled={!supported || action.pending()} value={delivery()}
+          options={DELIVERY_OPTIONS} onChange={(value) => change({ delivery: value })} /></label>
         <Show when={!supported}><p class="secondary">This desktop session supports system notifications.</p></Show>
         <Show when={delivery() !== 'system'}>
-          <label class="setting-row">Overlay style<select disabled={action.pending()} value={config().style} onChange={(event) => {
-            const value = NOTICE_STYLES.find((item) => item === event.currentTarget.value);
-            if (value) change({ style: value });
-          }}>
-            <For each={NOTICE_STYLES}>{(item) => <option value={item}>{sentenceCase(item)}</option>}</For>
-          </select></label>
-          <label class="setting-row">Overlay position<select disabled={action.pending()} value={config().position} onChange={(event) => {
-            const value = NOTICE_POSITIONS.find((item) => item === event.currentTarget.value);
-            if (value) change({ position: value });
-          }}>
-            <For each={NOTICE_POSITIONS}>{(item) => <option value={item}>{sentenceCase(item.replace('-', ' '))}</option>}</For>
-          </select></label>
+          <label class="setting-row">Overlay style<Select label="Overlay style" disabled={action.pending()} value={config().style}
+            options={STYLE_OPTIONS} onChange={(value) => change({ style: value })} /></label>
+          <label class="setting-row">Overlay position<Select label="Overlay position" disabled={action.pending()} value={config().position}
+            options={POSITION_OPTIONS} onChange={(value) => change({ position: value })} /></label>
           <Show when={config().style === 'drip'}><Toggle label="Show drip handle" checked={config().dripLip} disabled={action.pending()}
             onChange={(dripLip) => change({ dripLip })} /></Show>
         </Show>
