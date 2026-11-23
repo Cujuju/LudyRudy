@@ -153,7 +153,7 @@ export function openDaemon(hooks: Hooks = {}) {
     return snapshot;
   }
 
-  function launch(path: string, args: string[], env: NodeJS.ProcessEnv): ManagedProcess {
+  function launch(path: string, args: string[], env: NodeJS.ProcessEnv, secrets: readonly string[] = []): ManagedProcess {
     const child = spawn(path, args, { env, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
     const process: ManagedProcess = { child, finished: false, closed: Promise.resolve() };
     process.closed = new Promise((resolve) => {
@@ -172,8 +172,8 @@ export function openDaemon(hooks: Hooks = {}) {
         if (started) hooks.crashed?.();
       });
     });
-    streamDaemonLogs(child.stdout, append);
-    streamDaemonLogs(child.stderr, append);
+    streamDaemonLogs(child.stdout, append, secrets);
+    streamDaemonLogs(child.stderr, append, secrets);
     return process;
   }
 
@@ -238,8 +238,9 @@ export function openDaemon(hooks: Hooks = {}) {
       const address = `${LOOPBACK}:${await availablePort()}`;
       const env = { ...process.env, RCLONE_RC_USER: user, RCLONE_RC_PASS: pass, RCLONE_CONFIG_PASS: password ?? '' };
       const client = new RcloneClient(`http://${address}`, `${user}:${pass}`);
+      const secrets = [user, pass, ...(password ? [password] : [])];
       const child = launch(binary.binaryPath, ['rcd', '--rc-addr', address, '--config', configPath,
-        '--cache-dir', cacheDir, '--use-json-log', '--log-level', 'INFO', '--ask-password=false', '--rc-no-auth=false'], env);
+        '--cache-dir', cacheDir, '--use-json-log', '--log-level', 'INFO', '--ask-password=false', '--rc-no-auth=false'], env, secrets);
       managed = child;
       status({ endpoint: client.endpoint });
       const deadline = Date.now() + START_TIMEOUT_MS;

@@ -1,18 +1,27 @@
-import { createMemo, Index, Show } from 'solid-js';
+import { createMemo, createSignal, Index, Show } from 'solid-js';
 import { Check, ExternalLink } from 'lucide-solid';
 import type { OnboardingAction, OnboardingStep } from '../lib/onboarding';
 import { deriveOnboarding } from '../lib/onboarding';
+import { readView, writeView } from '../lib/persisted';
 import { useAction } from '../lib/actions';
 import type { PageProps } from '../store';
 import { Feedback, SectionHeader } from './ui';
 
-export function SetupGuide(props: PageProps & { addRemote: () => void }) {
+const isBoolean = (value: unknown): value is boolean => typeof value === 'boolean';
+
+export function SetupGuide(props: PageProps & { addRemote: () => void; addMount: () => void }) {
   const action = useAction();
+  const [dismissed, setDismissed] = createSignal(readView('setupGuideDismissed', false, isBoolean));
   const model = createMemo(() => {
     const snapshot = props.store.snapshot();
-    return snapshot ? deriveOnboarding(snapshot) : undefined;
+    return snapshot ? deriveOnboarding(snapshot, props.store.settings().mounts.length) : undefined;
   });
+  const visible = () => !!model()?.show && !(model()?.canDismiss && dismissed());
   const installUrl = () => props.store.snapshot()?.prereqs.mountBackend.installUrl ?? '';
+
+  function dismiss(): void {
+    writeView('setupGuideDismissed', setDismissed(true));
+  }
 
   function trigger(kind: OnboardingAction): void {
     switch (kind) {
@@ -22,11 +31,17 @@ export function SetupGuide(props: PageProps & { addRemote: () => void }) {
       case 'add-remote':
         props.addRemote();
         break;
+      case 'new-mount':
+        props.addMount();
+        break;
       case 'install-mount-backend': {
         const url = installUrl();
         if (url) void action.run(() => window.api.openExternal(url));
         break;
       }
+      case 'open-browser':
+        props.navigate('Browser');
+        break;
     }
   }
 
@@ -35,10 +50,15 @@ export function SetupGuide(props: PageProps & { addRemote: () => void }) {
   }
 
   return (
-    <Show when={model()?.show}>
+    <Show when={visible()}>
       <section class="panel setup-guide" aria-label="Get started with ludyRudy">
         <SectionHeader title="Get started with ludyRudy">
-          <span class="secondary">Connect a remote to begin</span>
+          <div class="actions">
+            <span class="secondary">{model()!.canDismiss ? 'Create a mount or browse files' : 'Connect a remote to begin'}</span>
+            <Show when={model()!.canDismiss}>
+              <button type="button" class="text-button" onClick={dismiss}>Dismiss</button>
+            </Show>
+          </div>
         </SectionHeader>
         <div class="setup-intro">
           <p class="secondary">
