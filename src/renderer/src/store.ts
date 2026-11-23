@@ -4,6 +4,7 @@ import type { Page } from './components/Sidebar';
 import type { BuildInfo } from '@shared/buildInfo';
 import type { AppSnapshot } from '@shared/ipc';
 import { DEFAULT_SETTINGS, type AppSettings } from '@shared/settings';
+import { createBrowserCache } from './lib/browserCache';
 
 export const SETTINGS_SECTIONS = ['General', 'Appearance', 'Daemon & Security', 'Notifications', 'About'] as const;
 export type SettingsSection = typeof SETTINGS_SECTIONS[number];
@@ -21,9 +22,19 @@ export function createAppStore() {
   const [error, setError] = createSignal('');
   const [ready, setReady] = createSignal(false);
   const [refreshing, setRefreshing] = createSignal(false);
+  const browserCache = createBrowserCache();
+  let daemonSession = '';
   let disposed = false;
 
   const reportError = (cause: unknown) => setError(cause instanceof Error ? cause.message : String(cause));
+  const applySnapshot = (value: AppSnapshot) => {
+    const nextSession = value.daemon.state === 'running' ? `${value.daemon.endpoint ?? ''}\0${value.daemon.pid ?? ''}` : '';
+    if (nextSession !== daemonSession) {
+      if (daemonSession) browserCache.clear();
+      daemonSession = nextSession;
+    }
+    setSnapshot(value);
+  };
 
   onMount(() => {
     let snapshotUpdated = false;
@@ -32,7 +43,7 @@ export function createAppStore() {
     const dispose = [
       api.onSnapshot((value) => {
         snapshotUpdated = true;
-        setSnapshot(value);
+        applySnapshot(value);
         if (!untrack(ready)) setLogs(value.logs);
       }),
       api.onLog((entry) => setLogs((lines) => [entry, ...lines].slice(0, LOG_CAPACITY))),
@@ -47,7 +58,7 @@ export function createAppStore() {
     void api.initialize().then((initial) => {
       if (disposed) return;
       if (!snapshotUpdated) {
-        setSnapshot(initial.snapshot);
+        applySnapshot(initial.snapshot);
         setLogs(initial.snapshot.logs);
       }
       if (!settingsUpdated) setSettings(initial.settings);
@@ -80,7 +91,7 @@ export function createAppStore() {
   }
 
   return { settings, settingsSection, setSettingsSection, build, snapshot, logs, auth, browserTarget, setBrowserTarget,
-    maximized, ready, error, refreshing, updateGeneral, refresh };
+    browserCache, maximized, ready, error, refreshing, updateGeneral, refresh };
 }
 
 export type AppStore = ReturnType<typeof createAppStore>;

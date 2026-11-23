@@ -82,6 +82,7 @@ describe('expanded RC transport', () => {
     });
     await client.call('job/stop', { jobid: 12 });
     await client.call('core/quit');
+    await client.list('s3', 'photos');
     expect(fetch.mock.calls.map(([url, request]) => [new URL(String(url)).pathname, JSON.parse(String(request?.body))])).toEqual([
       ['/config/update', { name: 'vault', parameters: { directory_name_encryption: true }, opt: { obscure: true } }],
       ['/mount/mount', { fs: 'vault:', mountPoint: '/mnt/vault', mountType: 'mount', vfsOpt: { CacheMode: 'writes', ReadOnly: false } }],
@@ -89,6 +90,7 @@ describe('expanded RC transport', () => {
       ['/sync/sync', { srcFs: 'vault:', dstFs: 'drive:', _async: true, _config: { DryRun: true }, _filter: { ExcludeRule: ['*.tmp'] } }],
       ['/job/stop', { jobid: 12 }],
       ['/core/quit', {}],
+      ['/operations/list', { fs: 's3:', remote: 'photos', _config: { UseServerModTime: true } }],
     ]);
   });
 
