@@ -183,8 +183,20 @@ async function verifyUi(page: Cdp, abort: () => string | null) {
   await click('Close drawer', 'dialog[open]');
   await click('Add remote');
   await until('provider picker', async () => (await page.eval<boolean>(`!!document.querySelector('dialog [aria-label="Popular providers"]')`)) || null, abort);
+  await click('More…', 'dialog[open]');
+  await until('provider catalog dialog', async () => (await page.eval<boolean>(`(() => {
+    const items = [...document.querySelectorAll('.modal-dialog .provider-catalog-item strong')].map((el) => el.textContent.trim());
+    return items.length >= 13 && items.every((label, i) => i === 0 || items[i - 1].localeCompare(label, undefined, { sensitivity: 'base' }) <= 0);
+  })()`)) || null, abort);
+  await escape();
+  await until('Escape closes only provider catalog', async () => (await page.eval<boolean>(
+    `!document.querySelector('.modal-dialog') && !!document.querySelector('dialog.drawer[open]')`,
+  )) || null, abort);
   await click('SFTP', 'dialog[open]');
   await contains('Advanced options', 'dialog[open]');
+  await until('SFTP endpoint row', async () => (await page.eval<boolean>(
+    `document.querySelectorAll('dialog .endpoint-row input').length === 3 && document.querySelector('dialog .endpoint-row')?.textContent.includes('@') && document.querySelector('dialog .endpoint-row')?.textContent.includes(':')`,
+  )) || null, abort);
   await until('masked SFTP credential', async () => (await page.eval<boolean>('!!document.querySelector("dialog input[type=password]")')) || null, abort);
   await page.send('Emulation.setDeviceMetricsOverride', { width: 1024, height: 520, deviceScaleFactor: 1, mobile: false });
   const drawerScrolls = await page.eval<boolean>(`(() => {
