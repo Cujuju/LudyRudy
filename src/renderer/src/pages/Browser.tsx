@@ -1,6 +1,8 @@
 import { createMemo, createResource, createSignal, For, Match, Show, Switch, untrack } from 'solid-js';
+import AnchoredPopover from '@cujuju/solidjs-anchored-popover';
+import { GlassMenu } from '@cujuju/solidjs-glass-menu';
 import {
-  ArrowDown, ArrowUp, ArrowUpDown, ChevronRight, Download, File, FileArchive, FileCode,
+  ArrowDown, ArrowUp, ArrowUpDown, ChevronRight, Columns3, Download, File, FileArchive, FileCode,
   FileImage, FileMusic, FileSpreadsheet, FileText, FileVideoCamera, Folder, FolderPlus,
   Pencil, Presentation, RefreshCw, Trash2, Upload,
 } from 'lucide-solid';
@@ -9,8 +11,12 @@ import { ProviderIcon } from '../components/ProviderIcon';
 import { Quota } from '../components/Quota';
 import { Confirm, Drawer, Empty, Feedback, FormActions, PageHeader, SearchField, Select } from '../components/ui';
 import { errorMessage, useAction } from '../lib/actions';
-import { classifyEntry, nextSort, sortEntries, type FileKind, type SortKey, type SortState } from '../lib/fileTypes';
+import {
+  BROWSER_COLUMNS, classifyEntry, DEFAULT_BROWSER_COLUMNS, isBrowserColumnList, nextSort, sortEntries,
+  type BrowserColumnKey, type FileKind, type SortKey, type SortState,
+} from '../lib/fileTypes';
 import { formatBytes, formatTime } from '../lib/format';
+import { readView, writeView } from '../lib/persisted';
 import type { PageProps } from '../store';
 
 type Edit = { label: string; initial: string; submit: (path: string) => Promise<void> };
@@ -67,9 +73,54 @@ function PathDialog(props: { edit: Edit; close: () => void }) {
   );
 }
 
+function EntryCell(props: { col: BrowserColumnKey; entry: RemoteEntry; typeLabel: string }) {
+  return (
+    <Switch>
+      <Match when={props.col === 'type'}><td class="secondary nowrap">{props.typeLabel}</td></Match>
+      <Match when={props.col === 'size'}><td class="secondary numeric nowrap">{props.entry.isDir ? '—' : formatBytes(props.entry.size)}</td></Match>
+      <Match when={props.col === 'modTime'}><td class="secondary numeric nowrap">{formatTime(props.entry.modTime)}</td></Match>
+      <Match when={props.col === 'mimeType'}><td class="secondary path nowrap">{props.entry.mimeType || '—'}</td></Match>
+      <Match when={props.col === 'id'}><td class="secondary path nowrap">{props.entry.id || '—'}</td></Match>
+      <Match when={props.col === 'tier'}><td class="secondary nowrap">{props.entry.tier || '—'}</td></Match>
+      <Match when={props.col === 'encrypted'}><td class="secondary path nowrap">{props.entry.encrypted || '—'}</td></Match>
+    </Switch>
+  );
+}
+
+function ColumnPicker(props: { visible: readonly BrowserColumnKey[]; onToggle: (key: BrowserColumnKey) => void; onReset: () => void }) {
+  const [open, setOpen] = createSignal(false);
+  const [anchor, setAnchor] = createSignal<HTMLElement | null>(null);
+  return (
+    <>
+      <button ref={setAnchor} type="button" class="button" aria-haspopup="dialog" aria-expanded={open()} onClick={() => setOpen((v) => !v)}>
+        <Columns3 size={15} aria-hidden="true" /> Columns
+      </button>
+      <AnchoredPopover open={open} anchor={anchor} onDismiss={() => setOpen(false)} placement="below-end">
+        <GlassMenu class="column-picker-panel" surface="plain" tabIndex={-1}>
+          <div class="column-picker" role="group" aria-label="Visible columns">
+            <div class="column-picker-header">
+              <span>Columns</span>
+              <button type="button" class="text-button" onClick={() => props.onReset()}>Reset</button>
+            </div>
+            <For each={BROWSER_COLUMNS}>{(col) => (
+              <label class="column-picker-row">
+                <input type="checkbox" checked={props.visible.includes(col.key)} onChange={() => props.onToggle(col.key)} />
+                <span>{col.label}</span>
+              </label>
+            )}</For>
+          </div>
+        </GlassMenu>
+      </AnchoredPopover>
+    </>
+  );
+}
+
 export function Browser(props: PageProps) {
   const [filter, setFilter] = createSignal('');
   const [sort, setSort] = createSignal<SortState>({ key: 'name', direction: 'asc' });
+  const [columns, setColumns] = createSignal<BrowserColumnKey[]>(
+    readView('browser.columns', [...DEFAULT_BROWSER_COLUMNS], isBrowserColumnList),
+  );
   const [edit, setEdit] = createSignal<Edit>();
   const action = useAction();
   const remotes = () => props.store.snapshot()?.remotes ?? [];
@@ -104,7 +155,20 @@ export function Browser(props: PageProps) {
     const items = (current()?.items ?? []).filter((entry) => entry.name.toLowerCase().includes(query));
     return sortEntries(items, sort());
   });
+  const activeColumns = createMemo(() => BROWSER_COLUMNS.filter((col) => columns().includes(col.key)));
   const toggleSort = (key: SortKey) => setSort((prev) => nextSort(prev, key));
+  const toggleColumn = (key: BrowserColumnKey) => {
+    const next = columns().includes(key) ? columns().filter((k) => k !== key) : [...columns(), key];
+    setColumns(next);
+    writeView('browser.columns', next);
+    if (!next.includes(key) && sort().key === key) setSort({ key: 'name', direction: 'asc' });
+  };
+  const resetColumns = () => {
+    const next = [...DEFAULT_BROWSER_COLUMNS];
+    setColumns(next);
+    writeView('browser.columns', next);
+    if (sort().key !== 'name' && !next.includes(sort().key as BrowserColumnKey)) setSort({ key: 'name', direction: 'asc' });
+  };
   const parts = createMemo(() => path().split('/').filter(Boolean));
   const go = (name: string, next: string) => {
     action.clear();
@@ -160,6 +224,7 @@ export function Browser(props: PageProps) {
             </label>
             <div class="actions">
               <SearchField label="Filter filenames" value={filter()} onInput={setFilter} />
+              <ColumnPicker visible={columns()} onToggle={toggleColumn} onReset={resetColumns} />
               <button type="button" class="button" onClick={newFolder}><FolderPlus size={15} /> New folder</button>
               <button type="button" class="button" disabled={!nativeTransfers() || action.pending()}
                 title={nativeTransfers() ? undefined : 'File uploads require the managed daemon.'} onClick={() => void action.run(async () => {
@@ -183,9 +248,9 @@ export function Browser(props: PageProps) {
               <thead>
                 <tr>
                   <SortHeader label="Name" sortKey="name" sort={sort()} onSort={toggleSort} />
-                  <SortHeader label="Type" sortKey="type" sort={sort()} onSort={toggleSort} />
-                  <SortHeader label="Size" sortKey="size" sort={sort()} onSort={toggleSort} />
-                  <SortHeader label="Modified" sortKey="modTime" sort={sort()} onSort={toggleSort} />
+                  <For each={activeColumns()}>{(col) => (
+                    <SortHeader label={col.label} sortKey={col.key} sort={sort()} onSort={toggleSort} />
+                  )}</For>
                   <th>Actions</th>
                 </tr>
               </thead>
@@ -201,9 +266,9 @@ export function Browser(props: PageProps) {
                           </button>
                         </Show>
                       </td>
-                      <td class="secondary">{info.label}</td>
-                      <td class="secondary numeric">{entry.isDir ? '—' : formatBytes(entry.size)}</td>
-                      <td class="secondary numeric">{formatTime(entry.modTime)}</td>
+                      <For each={activeColumns()}>{(col) => (
+                        <EntryCell col={col.key} entry={entry} typeLabel={info.label} />
+                      )}</For>
                       <td><div class="actions">
                         <Show when={!entry.isDir}>
                           <button type="button" class="icon-button" aria-label="Download"

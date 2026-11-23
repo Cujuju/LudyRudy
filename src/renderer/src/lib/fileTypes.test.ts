@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { RemoteEntry } from '@shared/types';
-import { classifyEntry, nextSort, sortEntries } from './fileTypes';
+import { classifyEntry, isBrowserColumnList, nextSort, sortEntries } from './fileTypes';
 
 function entry(overrides: Partial<RemoteEntry> & { name: string }): RemoteEntry {
   return {
@@ -85,5 +85,18 @@ describe('sortEntries', () => {
   it('sorts by modTime across files and folders', () => {
     expect(sortEntries(items, { key: 'modTime', direction: 'desc' }).map((i) => i.name))
       .toEqual(['Archive', 'banner.png', 'alpha.pdf', 'zebra.txt', 'Documents']);
+  });
+
+  it('sorts by optional metadata columns and validates persisted column lists', () => {
+    const withTier = [
+      entry({ name: 'cold.bin', tier: 'GLACIER' }),
+      entry({ name: 'hot.bin', tier: 'STANDARD' }),
+      entry({ name: 'archive.bin', tier: 'ARCHIVE' }),
+    ];
+    expect(sortEntries(withTier, { key: 'tier', direction: 'asc' }).map((i) => i.name))
+      .toEqual(['archive.bin', 'cold.bin', 'hot.bin']);
+    expect(isBrowserColumnList(['type', 'size', 'tier'])).toBe(true);
+    expect(isBrowserColumnList(['type', 'bogus'])).toBe(false);
+    expect(isBrowserColumnList('type')).toBe(false);
   });
 });

@@ -19,7 +19,35 @@ export interface FileTypeInfo {
   label: string;
 }
 
-export type SortKey = 'name' | 'type' | 'size' | 'modTime';
+export type BrowserColumnKey = 'type' | 'size' | 'modTime' | 'mimeType' | 'id' | 'tier' | 'encrypted';
+
+export interface BrowserColumnDef {
+  key: BrowserColumnKey;
+  label: string;
+  defaultVisible: boolean;
+}
+
+export const BROWSER_COLUMNS: readonly BrowserColumnDef[] = [
+  { key: 'type', label: 'Type', defaultVisible: true },
+  { key: 'size', label: 'Size', defaultVisible: true },
+  { key: 'modTime', label: 'Modified', defaultVisible: true },
+  { key: 'mimeType', label: 'MIME type', defaultVisible: false },
+  { key: 'id', label: 'ID', defaultVisible: false },
+  { key: 'tier', label: 'Storage tier', defaultVisible: false },
+  { key: 'encrypted', label: 'Encrypted name', defaultVisible: false },
+];
+
+const VALID_COLUMN_KEYS = new Set<string>(BROWSER_COLUMNS.map((c) => c.key));
+
+export const DEFAULT_BROWSER_COLUMNS: readonly BrowserColumnKey[] = BROWSER_COLUMNS
+  .filter((c) => c.defaultVisible)
+  .map((c) => c.key);
+
+export function isBrowserColumnList(value: unknown): value is BrowserColumnKey[] {
+  return Array.isArray(value) && value.every((item) => typeof item === 'string' && VALID_COLUMN_KEYS.has(item));
+}
+
+export type SortKey = 'name' | BrowserColumnKey;
 export type SortDirection = 'asc' | 'desc';
 
 export interface SortState {
@@ -124,8 +152,12 @@ export function sortEntries(entries: readonly RemoteEntry[], sort: SortState): R
       diff = classifyEntry(a).label.localeCompare(classifyEntry(b).label, undefined, { sensitivity: 'base' });
     } else if (sort.key === 'size') {
       diff = a.size - b.size;
-    } else {
+    } else if (sort.key === 'modTime') {
       diff = timestampOf(a.modTime) - timestampOf(b.modTime);
+    } else {
+      const av = a[sort.key] ?? '';
+      const bv = b[sort.key] ?? '';
+      diff = av.localeCompare(bv, undefined, { sensitivity: 'base' });
     }
 
     return diff !== 0 ? diff * factor : compareNames(a.name, b.name);
