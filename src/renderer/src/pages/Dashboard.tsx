@@ -90,7 +90,7 @@ export function Dashboard(props: PageProps) {
         <button type="button" class="button" disabled={props.store.refreshing()} onClick={() => void props.store.refresh()}><RefreshCw size={15} /> Refresh</button>
       </PageHeader>
       <Telemetry store={props.store} navigate={props.navigate} />
-      <SetupGuide store={props.store} navigate={props.navigate} addRemote={() => setDrawer('remote')} />
+      <SetupGuide store={props.store} navigate={props.navigate} addRemote={() => setDrawer('remote')} addMount={() => setDrawer('mount')} />
       <Prerequisites store={props.store} navigate={props.navigate} />
       <MountLedger store={props.store} navigate={props.navigate} add={() => setDrawer('mount')} />
       <div class="dashboard-split">

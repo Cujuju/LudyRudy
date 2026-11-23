@@ -3,7 +3,7 @@ import type { DaemonStatus } from '@shared/types';
 
 export type OnboardingStepId = 'engine' | 'remote' | 'use';
 export type OnboardingStepState = 'done' | 'current' | 'upcoming' | 'attention';
-export type OnboardingAction = 'open-settings' | 'add-remote' | 'install-mount-backend';
+export type OnboardingAction = 'open-settings' | 'add-remote' | 'new-mount' | 'install-mount-backend' | 'open-browser';
 
 export interface OnboardingStep {
   id: OnboardingStepId;
@@ -15,6 +15,7 @@ export interface OnboardingStep {
 
 export interface OnboardingModel {
   show: boolean;
+  canDismiss: boolean;
   steps: OnboardingStep[];
 }
 
@@ -41,8 +42,11 @@ function engineStep(daemon: DaemonStatus): OnboardingStep {
   };
 }
 
-function remoteStep(daemon: DaemonStatus): OnboardingStep {
+function remoteStep(daemon: DaemonStatus, remoteCount: number): OnboardingStep {
   const step = { id: 'remote', title: 'Connect a cloud remote' } as const;
+  if (remoteCount > 0) {
+    return { ...step, state: 'done', detail: `${remoteCount} ${remoteCount === 1 ? 'remote' : 'remotes'} configured.` };
+  }
   if (daemon.state === 'running') {
     return {
       ...step, state: 'current',
@@ -53,29 +57,55 @@ function remoteStep(daemon: DaemonStatus): OnboardingStep {
   return { ...step, state: 'upcoming', detail: 'Start the rclone engine first, then connect a cloud storage provider.' };
 }
 
-function useStep(snapshot: AppSnapshot): OnboardingStep {
-  const step = { id: 'use', title: 'Mount a drive or browse files', state: 'upcoming' } as const;
+function useStep(snapshot: AppSnapshot, hasRemotes: boolean): OnboardingStep {
+  const step = { id: 'use', title: 'Mount a drive or browse files' } as const;
   const backend = snapshot.prereqs.mountBackend;
-  if (!snapshot.daemon.attached && !backend.available && backend.installUrl) {
+  const canMount = snapshot.daemon.attached || backend.available;
+  if (!hasRemotes) {
+    if (!canMount && backend.installUrl) {
+      return {
+        ...step, state: 'upcoming',
+        detail: `Browse files or wrap a remote with encryption anytime. Install ${backend.name} to mount remotes as local drives.`,
+        action: { kind: 'install-mount-backend', label: `Install ${backend.name}` },
+      };
+    }
     return {
-      ...step,
-      detail: `Browse files or wrap a remote with encryption anytime. Install ${backend.name} to mount remotes as local drives.`,
+      ...step, state: 'upcoming',
+      detail: 'After adding a remote, wrap it with client-side encryption, browse files, or mount it as a local drive.',
+    };
+  }
+  if (canMount) {
+    return {
+      ...step, state: 'current',
+      detail: 'Create a mount profile to access your remote as a local drive, or open the file browser.',
+      action: { kind: 'new-mount', label: 'New mount' },
+    };
+  }
+  if (backend.installUrl) {
+    return {
+      ...step, state: 'current',
+      detail: `Install ${backend.name} to mount your remote as a local drive, or browse files directly.`,
       action: { kind: 'install-mount-backend', label: `Install ${backend.name}` },
     };
   }
   return {
-    ...step,
-    detail: 'After adding a remote, wrap it with client-side encryption, browse files, or mount it as a local drive.',
+    ...step, state: 'current',
+    detail: 'Open the file browser to work with files on your connected remote.',
+    action: { kind: 'open-browser', label: 'Open browser' },
   };
 }
 
-export function deriveOnboarding(snapshot: AppSnapshot): OnboardingModel {
+export function deriveOnboarding(snapshot: AppSnapshot, mountProfileCount = 0): OnboardingModel {
   const { daemon } = snapshot;
-  const show = snapshot.remotes.length === 0 && !snapshot.dataError
-    && (daemon.state === 'running' || (daemon.mode === 'managed' && daemon.binarySource === 'missing'));
-  if (!show) return { show: false, steps: [] };
+  const hasRemotes = snapshot.remotes.length > 0;
+  const hasMounts = mountProfileCount > 0 || snapshot.mounts.length > 0;
+  const missingManagedBinary = daemon.mode === 'managed' && daemon.binarySource === 'missing' && !hasRemotes;
+  const needsSetup = daemon.state === 'running' && (!hasRemotes || !hasMounts);
+  const show = !snapshot.dataError && (needsSetup || missingManagedBinary);
+  if (!show) return { show: false, canDismiss: false, steps: [] };
   return {
     show: true,
-    steps: [engineStep(daemon), remoteStep(daemon), useStep(snapshot)],
+    canDismiss: hasRemotes,
+    steps: [engineStep(daemon), remoteStep(daemon, snapshot.remotes.length), useStep(snapshot, hasRemotes)],
   };
 }
