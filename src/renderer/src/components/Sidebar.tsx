@@ -57,7 +57,7 @@ export function Sidebar(props: {
       <Show when={!props.collapsed}>
         <button type="button" class="build-card" onClick={() => props.openAbout()}>
           <span class="build-row">
-            <span class="build-title">ludyRudy<span class="build-version">{props.build?.version ?? '—'}</span></span>
+            <span class="build-title">LudyRudy<span class="build-version">{props.build?.version ?? '—'}</span></span>
             <span class="build-sub">
               {props.build?.build ? `build ${props.build.build}` : 'unstamped build'}
               <Show when={props.build?.modified}><span class="build-modified"> · modified</span></Show>

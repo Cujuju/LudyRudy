@@ -27,7 +27,7 @@ describe('oauthTemplate', () => {
     expect(html).toContain('{{ if .OK }}');
     expect(html).toContain('{{ else }}');
     expect(html).toContain('Google Drive connected.');
-    expect(html).toContain('Return to ludyRudy to finish setup.');
+    expect(html).toContain('Return to LudyRudy to finish setup.');
     expect(html).toContain('Close tab');
     expect(html).toContain('Google Drive authorization failed.');
   });

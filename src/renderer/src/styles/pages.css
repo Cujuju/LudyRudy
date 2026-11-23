@@ -264,6 +264,16 @@
 .settings-nav button[aria-current='page'] { color: var(--color-text); border-bottom-color: var(--color-accent-light); font-weight: 620; background: transparent; }
 .settings-body { display: grid; gap: var(--spacing-3); min-width: 0; padding: var(--spacing-4); }
 .settings-body > * + *:not(.banner) { padding-top: var(--spacing-3); border-top: var(--border-width) solid var(--color-border); }
+.settings-body .field {
+  grid-template-columns: auto minmax(0, var(--setting-input-width));
+  justify-content: space-between;
+  align-items: center;
+  column-gap: var(--spacing-4);
+}
+.settings-body .field > .banner { grid-column: 1 / -1; }
+@media (max-width: 640px) {
+  .settings-body .field { grid-template-columns: 1fr; }
+}
 .settings-footer { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--spacing-3); }
 .settings-footer > .actions { margin-inline-start: auto; }
 .properties { grid-template-columns: max-content minmax(0, 1fr); }
