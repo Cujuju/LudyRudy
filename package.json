@@ -1,6 +1,6 @@
 {
   "name": "ludyrudy",
-  "productName": "ludyRudy",
+  "productName": "LudyRudy",
   "private": true,
   "version": "0.0.0",
   "description": "Desktop rclone manager for cloud storage, encrypted remotes, and mounts.",

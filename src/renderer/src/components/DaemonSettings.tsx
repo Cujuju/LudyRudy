@@ -86,7 +86,7 @@ function ConfigEncryption(props: { store: AppStore }) {
       </span></SectionHeader>
       <div class="settings-body">
         <Show when={daemon()?.mode === 'managed'} fallback={<p class="secondary">Manage config encryption on the host running rclone.</p>}>
-          <p class="secondary">ludyRudy keeps the password in your operating system’s credential store.</p>
+          <p class="secondary">LudyRudy keeps the password in your operating system’s credential store.</p>
           <Show when={stored()?.error}>{(error) => <p class="banner error" role="alert">{error()}</p>}</Show>
           <form class="form-stack" onSubmit={(event) => {
             event.preventDefault();

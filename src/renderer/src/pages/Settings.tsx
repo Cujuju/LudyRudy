@@ -22,20 +22,24 @@ const POSITION_OPTIONS = NOTICE_POSITIONS.map((value) => ({ value, label: senten
 function General(props: PageProps) {
   const general = () => props.store.settings().general;
   return (
-    <>
-      <section class="panel">
-        <SectionHeader title="Appearance" />
-        <div class="settings-body"><ThemePicker value={general().theme} onChange={(theme) => void props.store.updateGeneral({ theme })} /></div>
-      </section>
-      <section class="panel">
-        <SectionHeader title="Window behavior" />
-        <div class="settings-body">
-          <For each={WINDOW_OPTIONS}>{(item) => (
-            <Toggle label={item.label} checked={general()[item.key]} onChange={(value) => void props.store.updateGeneral({ [item.key]: value })} />
-          )}</For>
-        </div>
-      </section>
-    </>
+    <section class="panel">
+      <SectionHeader title="Window behavior" />
+      <div class="settings-body">
+        <For each={WINDOW_OPTIONS}>{(item) => (
+          <Toggle label={item.label} checked={general()[item.key]} onChange={(value) => void props.store.updateGeneral({ [item.key]: value })} />
+        )}</For>
+      </div>
+    </section>
+  );
+}
+
+function Appearance(props: PageProps) {
+  const general = () => props.store.settings().general;
+  return (
+    <section class="panel">
+      <SectionHeader title="Appearance" />
+      <div class="settings-body"><ThemePicker value={general().theme} onChange={(theme) => void props.store.updateGeneral({ theme })} /></div>
+    </section>
   );
 }
 
@@ -82,11 +86,12 @@ export function Settings(props: PageProps) {
       </nav>
       <Switch>
         <Match when={section() === 'General'}><General store={props.store} navigate={props.navigate} /></Match>
+        <Match when={section() === 'Appearance'}><Appearance store={props.store} navigate={props.navigate} /></Match>
         <Match when={section() === 'Daemon & Security'}><DaemonSettings store={props.store} /></Match>
         <Match when={section() === 'Notifications'}><Notifications store={props.store} navigate={props.navigate} /></Match>
         <Match when={section() === 'About'}>
           <section class="panel">
-            <SectionHeader title="About ludyRudy" />
+            <SectionHeader title="About LudyRudy" />
             <dl class="properties settings-body">
               <div><dt>Version</dt><dd class="path">{props.store.build()?.version}</dd></div>
               <div><dt>Build</dt><dd class="path">{props.store.build()?.build}{props.store.build()?.modified ? ' (modified)' : ''}</dd></div>

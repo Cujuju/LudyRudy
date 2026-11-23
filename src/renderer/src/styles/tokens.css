@@ -36,6 +36,7 @@
   --page-pad: clamp(var(--spacing-4), 2.5vw, 32px);
   --page-max: 1320px;
   --settings-max: 860px;
+  --setting-input-width: 420px;
   --card-gap: var(--spacing-2);
   --dot-size: 8px;
   --bar-height: 5px;

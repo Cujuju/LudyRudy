@@ -51,8 +51,8 @@ export function SetupGuide(props: PageProps & { addRemote: () => void; addMount:
 
   return (
     <Show when={visible()}>
-      <section class="panel setup-guide" aria-label="Get started with ludyRudy">
-        <SectionHeader title="Get started with ludyRudy">
+      <section class="panel setup-guide" aria-label="Get started with LudyRudy">
+        <SectionHeader title="Get started with LudyRudy">
           <div class="actions">
             <span class="secondary">{model()!.canDismiss ? 'Create a mount or browse files' : 'Connect a remote to begin'}</span>
             <Show when={model()!.canDismiss}>
@@ -62,7 +62,7 @@ export function SetupGuide(props: PageProps & { addRemote: () => void; addMount:
         </SectionHeader>
         <div class="setup-intro">
           <p class="secondary">
-            ludyRudy runs a local rclone engine in the background to connect cloud accounts, encrypt vaults, and mount them as drives.
+            LudyRudy runs a local rclone engine in the background to connect cloud accounts, encrypt vaults, and mount them as drives.
           </p>
         </div>
         <ol class="setup-steps">

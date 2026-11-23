@@ -119,7 +119,7 @@ async function verifyUi(page: Cdp, abort: () => string | null) {
   await page.eval(`document.querySelector('.nav-btn[aria-label="Dashboard"]').dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))`);
   await sidebarExpanded(true);
   await page.eval("document.querySelector('.build-card').click()");
-  await contains('About ludyRudy');
+  await contains('About LudyRudy');
   await openPage(page, 'Dashboard', abort);
   await click('New mount');
   await contains('VFS cache mode', 'dialog[open]');
@@ -250,6 +250,8 @@ async function verifyUi(page: Cdp, abort: () => string | null) {
   await contains('No log entries in this view.');
 
   await openPage(page, 'Settings', abort);
+  await click('Appearance');
+  await contains('System', '.theme-grid');
   await click('Daemon & Security');
   await contains('rclone.conf encryption');
   await click('Notifications');
@@ -257,5 +259,5 @@ async function verifyUi(page: Cdp, abort: () => string | null) {
   await click('Send test notice');
   await contains('Test notice requested.');
   await page.eval("document.querySelector('.build-card').click()");
-  await contains('About ludyRudy');
+  await contains('About LudyRudy');
 }
