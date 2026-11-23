@@ -43,7 +43,7 @@ const PROVIDERS = [
     ] }, { Name: 'directory_name_encryption', Default: true, Type: 'bool' },
   ] : Name === 'sftp' ? [
     { Name: 'host', Required: true }, { Name: 'user' }, { Name: 'pass', IsPassword: true },
-    { Name: 'port', Default: 22, Advanced: true },
+    { Name: 'port', Default: 22, Advanced: true }, { Name: 'key_file', Advanced: true },
   ] : ['drive', 'onedrive', 'dropbox', 'box', 'pcloud'].includes(Name ?? '') ? [{ Name: 'token' }] : [],
 }));
 const TRANSFER = {
