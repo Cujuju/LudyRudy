@@ -1,6 +1,16 @@
 import type { ActiveMount, CompletedTransfer, RemoteParameters, RemoteEntry, RemoteQuota, RemoteSummary, TransferStats, MountProfile } from '@shared/types';
 
-export interface RcItem { Path: string; Name: string; Size: number; MimeType?: string; ModTime?: string; IsDir: boolean }
+export interface RcItem {
+  Path: string;
+  Name: string;
+  Size: number;
+  MimeType?: string;
+  ModTime?: string;
+  IsDir: boolean;
+  ID?: string;
+  Tier?: string;
+  Encrypted?: string;
+}
 interface RcMount { Fs: string; MountPoint: string; MountedOn?: string }
 interface RcStats extends Omit<TransferStats, 'bwLimit' | 'transferring'> { transferring?: TransferStats['transferring'] }
 type ConfigDump = Record<string, Record<string, string>>;
@@ -204,5 +214,8 @@ function toRemoteEntry(item: RcItem): RemoteEntry {
   return {
     path: item.Path, name: item.Name, size: item.Size, mimeType: item.MimeType ?? '',
     modTime: item.ModTime ?? '', isDir: item.IsDir,
+    ...(item.ID ? { id: item.ID } : {}),
+    ...(item.Tier ? { tier: item.Tier } : {}),
+    ...(item.Encrypted ? { encrypted: item.Encrypted } : {}),
   };
 }

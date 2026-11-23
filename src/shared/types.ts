@@ -77,6 +77,9 @@ export interface RemoteEntry {
   mimeType: string;
   modTime: string;
   isDir: boolean;
+  id?: string;
+  tier?: string;
+  encrypted?: string;
 }
 
 export interface RemoteQuota {
