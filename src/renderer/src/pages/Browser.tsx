@@ -11,7 +11,6 @@ import { Confirm, Drawer, Empty, Feedback, FormActions, PageHeader, SearchField,
 import { errorMessage, useAction } from '../lib/actions';
 import { classifyEntry, nextSort, sortEntries, type FileKind, type SortKey, type SortState } from '../lib/fileTypes';
 import { formatBytes, formatTime } from '../lib/format';
-import { remoteOptions } from '../lib/remotes';
 import type { PageProps } from '../store';
 
 type Edit = { label: string; initial: string; submit: (path: string) => Promise<void> };
@@ -152,8 +151,11 @@ export function Browser(props: PageProps) {
         <section class="panel file-panel">
           <div class="file-toolbar">
             <label class="row">Remote
-              <Show when={remote()}>{(item) => <ProviderIcon type={item().type} size="sm" />}</Show>
-              <Select label="Remote" value={selection()} options={remoteOptions(remotes())}
+              <Select label="Remote" value={selection()} options={remotes().map((item) => ({
+                value: item.name,
+                label: item.isCrypt ? `${item.name} (encrypted)` : item.name,
+                icon: () => <ProviderIcon type={item.type} size="sm" />,
+              }))}
                 onChange={(value) => go(value, '')} />
             </label>
             <div class="actions">
