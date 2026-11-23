@@ -18,6 +18,7 @@ const config: Configuration = {
     { from: 'resources', to: '.', filter: ['icon.png', 'icon.ico'] },
     { from: 'out/licenses', to: 'licenses' },
     { from: '../solidjs-toolkit/LICENSE', to: 'licenses/solidjs-toolkit.txt' },
+    { from: 'src/renderer/src/assets/providers', to: 'licenses/providers', filter: ['README.md', 'LICENSE-dashboard-icons.txt'] },
   ],
   beforePack(context) {
     const platform = context.electronPlatformName;

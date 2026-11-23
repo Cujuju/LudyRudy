@@ -1,6 +1,7 @@
 import { createMemo, createResource, createSignal, For, Show, untrack } from 'solid-js';
-import { ChevronRight, File, Folder, FolderPlus, LockKeyhole, RefreshCw, Upload } from 'lucide-solid';
+import { ChevronRight, File, Folder, FolderPlus, RefreshCw, Upload } from 'lucide-solid';
 import type { RemoteEntry } from '@shared/types';
+import { ProviderIcon } from '../components/ProviderIcon';
 import { Quota } from '../components/Quota';
 import { Confirm, Drawer, Empty, Feedback, FormActions, PageHeader, SearchField, Select } from '../components/ui';
 import { errorMessage, useAction } from '../lib/actions';
@@ -105,8 +106,11 @@ export function Browser(props: PageProps) {
       <Show when={connected() && selection()} fallback={<Empty>Connect to rclone and add a remote to browse files.</Empty>}>
         <section class="panel file-panel">
           <div class="file-toolbar">
-            <label class="row">Remote<Select label="Remote" value={selection()} options={remoteOptions(remotes())}
-              onChange={(value) => go(value, '')} /></label>
+            <label class="row">Remote
+              <Show when={remote()}>{(item) => <ProviderIcon type={item().type} size="sm" />}</Show>
+              <Select label="Remote" value={selection()} options={remoteOptions(remotes())}
+                onChange={(value) => go(value, '')} />
+            </label>
             <div class="actions">
               <SearchField label="Filter filenames" value={filter()} onInput={setFilter} />
               <button type="button" class="button" onClick={newFolder}><FolderPlus size={15} /> New folder</button>
@@ -158,7 +162,7 @@ export function Browser(props: PageProps) {
           <Feedback action={action} />
           <footer class="file-footer">
             <span>{filtered().length} {filtered().length === 1 ? 'item' : 'items'}</span>
-            <span class="row"><Show when={remote()?.isCrypt}><LockKeyhole size={14} /></Show>{remote()?.isCrypt ? 'Encrypted' : 'Direct remote'}</span>
+            <span>{remote()?.isCrypt ? 'Encrypted' : 'Direct remote'}</span>
             <Show when={currentQuota()?.value} fallback={<span class="secondary" title={currentQuota()?.error}>{quota.loading ? 'Loading quota…' : 'Storage quota unavailable'}</span>}>
               {(value) => <Quota value={value()} />}
             </Show>
