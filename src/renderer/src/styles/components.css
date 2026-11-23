@@ -261,16 +261,19 @@ progress::-webkit-progress-value { background: var(--color-accent-light); border
   position: fixed;
   inset: var(--spacing-3) var(--spacing-3) var(--spacing-3) auto;
   width: min(530px, calc(100% - 2 * var(--spacing-3)));
+  height: auto;
   max-width: none;
-  max-height: none;
+  max-height: calc(100% - 2 * var(--spacing-3));
   margin: 0;
   padding: 0;
   color: var(--color-text);
   background: var(--color-surface-raised);
   border: var(--border-width) solid var(--color-border-strong);
   border-radius: var(--radius-card);
-  overflow: auto;
+  overflow: hidden;
 }
+.drawer[open] { display: flex; flex-direction: column; }
+.drawer-inner { flex: 1; min-height: 0; min-width: 0; overflow: auto; }
 .drawer::backdrop { background: var(--color-scrim); }
 .drawer .section-header { padding: var(--spacing-4) var(--spacing-5); align-items: flex-start; }
 .drawer .section-header h2 { font-size: 19px; }

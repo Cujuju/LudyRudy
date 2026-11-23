@@ -170,6 +170,23 @@ async function verifyUi(page: Cdp, abort: () => string | null) {
   await click('SFTP', 'dialog[open]');
   await contains('Advanced options', 'dialog[open]');
   await until('masked SFTP credential', async () => (await page.eval<boolean>('!!document.querySelector("dialog input[type=password]")')) || null, abort);
+  await page.send('Emulation.setDeviceMetricsOverride', { width: 1024, height: 520, deviceScaleFactor: 1, mobile: false });
+  const drawerScrolls = await page.eval<boolean>(`(() => {
+    const dialog = document.querySelector('dialog[open]');
+    const inner = dialog?.querySelector('.drawer-inner');
+    const submit = dialog?.querySelector('button[type=submit]');
+    const advanced = dialog?.querySelector('details.advanced');
+    if (advanced) advanced.open = true;
+    if (!dialog || !inner || !submit) return false;
+    const fits = dialog.getBoundingClientRect().bottom <= window.innerHeight;
+    if (inner.scrollHeight <= inner.clientHeight) return false;
+    inner.scrollTop = inner.scrollHeight;
+    const innerRect = inner.getBoundingClientRect();
+    const submitRect = submit.getBoundingClientRect();
+    return fits && inner.scrollTop > 0 && submitRect.top >= innerRect.top && submitRect.bottom <= innerRect.bottom;
+  })()`);
+  await page.send('Emulation.clearDeviceMetricsOverride');
+  if (!drawerScrolls) throw new Error('Drawer overflowed the viewport or failed to scroll.');
   await click('Close drawer', 'dialog[open]');
 
   await openPage(page, 'Browser', abort);
