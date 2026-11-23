@@ -79,10 +79,17 @@ describe('expanded RC transport', () => {
     const secret = crypto.randomUUID();
     vi.stubGlobal('fetch', vi.fn<typeof globalThis.fetch>()
       .mockResolvedValueOnce(Response.json({ transferred: [{ name: 'file.txt', size: 10, bytes: 0, checked: false, error: secret, srcFs: `:s3,token=${secret}:.` }] }))
-      .mockResolvedValueOnce(Response.json({ mountPoints: [{ Fs: `:s3,token=${secret}:.`, MountPoint: '/mnt/s3' }] })));
+      .mockResolvedValueOnce(Response.json({ mountPoints: [{ Fs: `:s3,token=${secret}:.`, MountPoint: '/mnt/s3' }] }))
+      .mockResolvedValueOnce(Response.json({
+        bytes: 10, totalBytes: 10, speed: 5, eta: 1, transfers: 0, totalTransfers: 1, checks: 0, errors: 0,
+        transferring: [{ name: 'clip.bin', bytes: 5, size: 10, speed: 5, eta: 1, srcFs: `:s3,token=${secret}:dir`, dstFs: 'vault:media' }],
+      }))
+      .mockResolvedValueOnce(Response.json({ rate: 'off' })));
     const client = new RcloneClient('http://localhost:5572');
-    const data = [await client.transferred(), await client.mounts()];
-    expect(data).toMatchObject([[{ name: 'file.txt', failed: true }], [{ fs: ':s3' }]]);
+    const data = [await client.transferred(), await client.mounts(), await client.stats()];
+    expect(data).toMatchObject([[{ name: 'file.txt', failed: true }], [{ fs: ':s3' }], {
+      transferring: [{ name: 'clip.bin', srcFs: ':s3', dstFs: 'vault:media' }],
+    }]);
     expect(JSON.stringify(data)).not.toContain(secret);
   });
 });

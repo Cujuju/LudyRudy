@@ -84,7 +84,7 @@ export function App() {
 
   return (
     <div class="shell">
-      <TitleBar maximized={store.maximized()} stats={store.snapshot()?.stats} showTransfers={() => navigate('Transfers')} />
+      <TitleBar maximized={store.maximized()} />
       <div class="shell-body">
         <Sidebar page={page()} collapsed={collapsed()} daemon={store.snapshot()?.daemon} prereqs={store.snapshot()?.prereqs}
           build={store.build()} mounts={store.snapshot()?.mounts.length ?? 0}

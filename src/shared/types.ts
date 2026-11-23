@@ -93,6 +93,8 @@ export interface TransferItem {
   size: number;
   speed: number;
   eta: number | null;
+  srcFs?: string | null;
+  dstFs?: string | null;
 }
 
 export interface TransferStats {
