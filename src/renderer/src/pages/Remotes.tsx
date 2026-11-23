@@ -1,8 +1,9 @@
 import { createSignal, For, Show, untrack } from 'solid-js';
-import { Cloud, LockKeyhole, Plus } from 'lucide-solid';
+import { LockKeyhole, Plus } from 'lucide-solid';
 import type { RemoteSummary } from '@shared/types';
 import { CryptDrawer } from '../components/CryptDrawer';
 import { MountDrawer } from '../components/MountDrawer';
+import { ProviderIcon } from '../components/ProviderIcon';
 import { RemoteDrawer } from '../components/RemoteDrawer';
 import { Confirm, Empty, Feedback, PageHeader, SectionHeader } from '../components/ui';
 import { VolumeConduit } from '../components/VolumeConduit';
@@ -19,13 +20,15 @@ function RemoteRow(props: PageProps & { remote: RemoteSummary; open: (drawer: Dr
     <article class="ledger-row" classList={{ 'direct-remote': !props.remote.isCrypt }}>
       <div class="ledger-heading">
         <div class="row">
-          <Show when={props.remote.isCrypt} fallback={<Cloud size={17} />}><LockKeyhole size={17} /></Show>
+          <ProviderIcon type={props.remote.type} />
           <strong>{name()}</strong><span class="chip" classList={{ encrypted: props.remote.isCrypt }}>
             {props.remote.isCrypt ? 'Encrypted' : providerName(props.remote.type)}</span>
         </div>
         <Show when={props.remote.isCrypt}><span class="secondary">Directory names {props.remote.directoryNameEncryption ? 'encrypted' : 'visible'}</span></Show>
       </div>
-      <Show when={props.remote.isCrypt}><VolumeConduit spec={`${name()}:`} remote={props.remote} /></Show>
+      <Show when={props.remote.isCrypt}>
+        <VolumeConduit spec={`${name()}:`} remote={props.remote} remotes={props.store.snapshot()?.remotes ?? []} />
+      </Show>
       <div class="actions remote-actions">
         <button type="button" class="button" onClick={() => {
           props.store.setBrowserTarget({ remote: name(), path: '' });

@@ -4,6 +4,7 @@ import { Copy } from 'lucide-solid';
 import type { CryptDraft, RemoteSummary } from '@shared/types';
 import { useAction } from '../lib/actions';
 import { remoteOptions } from '../lib/remotes';
+import { ProviderIcon } from './ProviderIcon';
 import { Drawer, Feedback, FormActions, SecretInput, Select, Segmented, Toggle } from './ui';
 
 const CIPHER_MODES = ['standard', 'obfuscate', 'off'] as const;
@@ -16,7 +17,8 @@ export function CryptDrawer(props: { remotes: RemoteSummary[]; target?: string; 
   });
   const action = useAction();
   const tools = useAction();
-  const hasTarget = () => props.remotes.some(({ name }) => name === draft.targetRemote);
+  const selectedRemote = () => props.remotes.find(({ name }) => name === draft.targetRemote);
+  const hasTarget = () => !!selectedRemote();
 
   async function save() {
     if (!hasTarget()) return;
@@ -33,8 +35,13 @@ export function CryptDrawer(props: { remotes: RemoteSummary[]; target?: string; 
     <Drawer title="Wrap with encryption" description="Create a vault backed by an existing remote." busy={action.pending()} close={props.close}>
       <form class="form-stack" onSubmit={(event) => { event.preventDefault(); void save(); }}>
         <fieldset disabled={action.pending()}>
-          <label class="field">Storage remote<Select label="Storage remote" value={hasTarget() ? draft.targetRemote : ''}
-            options={remoteOptions(props.remotes)} placeholder="Choose a remote" onChange={(value) => setDraft('targetRemote', value)} /></label>
+          <label class="field">Storage remote
+            <span class="row provider-select">
+              <Show when={selectedRemote()}>{(remote) => <ProviderIcon type={remote().type} size="sm" />}</Show>
+              <Select label="Storage remote" value={hasTarget() ? draft.targetRemote : ''}
+                options={remoteOptions(props.remotes)} placeholder="Choose a remote" onChange={(value) => setDraft('targetRemote', value)} />
+            </span>
+          </label>
           <label class="field">Storage subfolder<input class="path" placeholder="Remote root" value={draft.targetPath}
             onInput={(event) => setDraft('targetPath', event.currentTarget.value)} /></label>
           <label class="field">Vault name<input required value={draft.name} onInput={(event) => setDraft('name', event.currentTarget.value)} /></label>

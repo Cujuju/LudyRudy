@@ -3,6 +3,7 @@ import type { AuthSession, ProviderInfo, RemoteParameters, RemoteSummary } from 
 import { useAction } from '../lib/actions';
 import { providerName } from '../lib/remotes';
 import type { AppStore } from '../store';
+import { ProviderIcon } from './ProviderIcon';
 import { Drawer, Empty, Feedback, FormActions, SecretInput, Select, Toggle } from './ui';
 
 function isSecret(option: Record<string, unknown>) {
@@ -156,19 +157,24 @@ export function RemoteDrawer(props: { store: AppStore; remote?: RemoteSummary; c
       <form class="form-stack" onSubmit={(event) => { event.preventDefault(); void save(); }}>
         <fieldset disabled={busy()}>
           <label class="field">Remote name<input value={name()} readonly={!!props.remote} required onInput={(event) => setName(event.currentTarget.value)} /></label>
-          <Show when={!props.remote} fallback={<p class="secondary">Provider: {providerName(kind())}</p>}>
+          <Show when={!props.remote} fallback={
+            <p class="row secondary"><ProviderIcon type={kind()} />Provider: {providerName(kind())}</p>
+          }>
             <label class="field">Find a provider<input type="search" placeholder="Search all providers" value={search()}
               onInput={(event) => setSearch(event.currentTarget.value)} /></label>
             <Show when={!search().trim() && matches().some((item) => item.popular)}>
               <div class="provider-picker" role="group" aria-label="Popular providers">
                 <For each={matches().filter((item) => item.popular)}>{(item) => (
                   <button type="button" class="button" aria-pressed={kind() === item.name} disabled={authActive() || authComplete() || authAction.pending()}
-                    onClick={() => select(item.name)}>{providerName(item.name)}</button>
+                    onClick={() => select(item.name)}><ProviderIcon type={item.name} size="sm" />{providerName(item.name)}</button>
                 )}</For>
               </div>
             </Show>
-            <label class="field">Provider<Select label="Provider" value={kind()} options={providerOptions()} placeholder="Choose a provider"
-              disabled={authActive() || authComplete() || authAction.pending()} onChange={select} /></label>
+            <label class="field">
+              <span class="row">Provider<Show when={kind()}>{(type) => <ProviderIcon type={type()} />}</Show></span>
+              <Select label="Provider" value={kind()} options={providerOptions()} placeholder="Choose a provider"
+                disabled={authActive() || authComplete() || authAction.pending()} onChange={select} />
+            </label>
           </Show>
           <Show when={lookup.pending()}><Empty>Loading providers…</Empty></Show>
           <Show when={lookup.error()}><button type="button" class="button" onClick={load}>Retry loading providers</button></Show>

@@ -5,6 +5,7 @@ import { CACHE_AGE_PRESETS, CACHE_SIZE_PRESETS, MOUNT_OPTION_CATALOG, type Mount
 import { VFS_CACHE_MODES, type MountProfile, type RemoteSummary } from '@shared/types';
 import { useAction } from '../lib/actions';
 import { remoteOptions } from '../lib/remotes';
+import { ProviderIcon } from './ProviderIcon';
 import { blurActiveElement, Drawer, Feedback, FormActions, Select, Segmented, Toggle } from './ui';
 
 type MountDraft = Parameters<typeof window.api.saveMountProfile>[0];
@@ -122,6 +123,7 @@ export function MountDrawer(props: {
   const showRawFlags = untrack(() => draft.extraFlags.length > 0);
   const [types, setTypes] = createSignal<string[]>([]);
   const action = useAction();
+  const selectedRemote = () => props.remotes.find(({ name }) => name === draft.remote);
   const lookup = useAction();
   const picker = useAction();
   const busy = () => action.pending() || picker.pending();
@@ -164,8 +166,13 @@ export function MountDrawer(props: {
       <form class="form-stack" onSubmit={(event) => { event.preventDefault(); void save(); }}>
         <fieldset disabled={action.pending()}>
           <label class="field">Profile name<input required value={draft.name} onInput={(event) => setDraft('name', event.currentTarget.value)} /></label>
-          <label class="field">Remote<Select label="Remote" value={draft.remote} options={remotes()}
-            placeholder="Select a remote" onChange={(value) => setDraft('remote', value)} /></label>
+          <label class="field">Remote
+            <span class="row provider-select">
+              <Show when={selectedRemote()}>{(remote) => <ProviderIcon type={remote().type} size="sm" />}</Show>
+              <Select label="Remote" value={draft.remote} options={remotes()}
+                placeholder="Select a remote" onChange={(value) => setDraft('remote', value)} />
+            </span>
+          </label>
           <label class="field">Remote subfolder<input class="path" placeholder="Remote root" value={draft.remotePath} onInput={(event) => setDraft('remotePath', event.currentTarget.value)} /></label>
           <div class="field">
             <label for={mountPointId}>Mount point</label>

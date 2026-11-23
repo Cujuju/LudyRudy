@@ -55,7 +55,8 @@ function MountRow(props: MountProps & { profile?: MountProfile; external?: Activ
   const mount = () => props.external ?? props.store.snapshot()?.mounts.find(({ profileId }) => profileId === props.profile?.id);
   const path = () => mount()?.mountPoint ?? props.profile?.mountPoint ?? '';
   const spec = () => mount()?.fs ?? `${props.profile?.remote}:${props.profile?.remotePath}`;
-  const remote = () => props.store.snapshot()?.remotes.find(({ name }) => name === (props.profile?.remote ?? spec().split(':')[0]));
+  const remotes = () => props.store.snapshot()?.remotes ?? [];
+  const remote = () => remotes().find(({ name }) => name === (props.profile?.remote ?? spec().split(':')[0]));
   const activeTransfers = () => (props.store.snapshot()?.stats?.transferring ?? []).filter(
     (item) => matchesMount(item.srcFs, spec()) || matchesMount(item.dstFs, spec()),
   );
@@ -84,7 +85,7 @@ function MountRow(props: MountProps & { profile?: MountProfile; external?: Activ
           </div>
         )}</Show>
       </div>
-      <VolumeConduit mountPoint={path()} spec={spec()} remote={remote()} />
+      <VolumeConduit mountPoint={path()} spec={spec()} remote={remote()} remotes={remotes()} />
       <div class="actions mount-actions">
         <Show when={mount()} fallback={<button type="button" class="button" disabled={action.pending() || !canMount()}
           onClick={() => void action.run(() => untrack(() => window.api.mountProfile(props.profile!.id)), 'Drive mounted.')}>Mount drive</button>}>

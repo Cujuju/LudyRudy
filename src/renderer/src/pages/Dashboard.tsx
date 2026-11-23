@@ -1,8 +1,9 @@
 import { createSignal, For, Show, untrack } from 'solid-js';
-import { Activity, Cloud, HardDrive, LockKeyhole, Plus, RefreshCw, Server } from 'lucide-solid';
+import { Activity, HardDrive, Plus, RefreshCw, Server } from 'lucide-solid';
 import type { RemoteQuota, RemoteSummary } from '@shared/types';
 import { MountDrawer } from '../components/MountDrawer';
 import { MountLedger, Prerequisites } from '../components/MountLedger';
+import { ProviderIcon } from '../components/ProviderIcon';
 import { Quota } from '../components/Quota';
 import { RemoteDrawer } from '../components/RemoteDrawer';
 import { SetupGuide } from '../components/SetupGuide';
@@ -10,7 +11,7 @@ import { Empty, Feedback, PageHeader, SectionHeader, sentenceCase, StatusDot } f
 import { useAction } from '../lib/actions';
 import { formatBytes, formatSpeed, formatTime } from '../lib/format';
 import { daemonSourceLabel } from '../lib/onboarding';
-import { providerName } from '../lib/remotes';
+import { providerName, storageProvider } from '../lib/remotes';
 import type { PageProps } from '../store';
 
 function Telemetry(props: PageProps) {
@@ -51,14 +52,14 @@ function Telemetry(props: PageProps) {
   );
 }
 
-function StorageRow(props: { remote: RemoteSummary }) {
+function StorageRow(props: { remote: RemoteSummary; remotes: readonly RemoteSummary[] }) {
   const [quota, setQuota] = createSignal<RemoteQuota>();
   const action = useAction();
   return (
     <div class="compact-ledger">
       <div class="ledger-heading">
         <div class="row">
-          <Show when={props.remote.isCrypt} fallback={<Cloud size={15} />}><LockKeyhole size={15} /></Show>
+          <ProviderIcon type={props.remote.type} />
           <strong>{props.remote.name}</strong>
           <Show when={props.remote.isCrypt}><span class="chip encrypted">Encrypted</span></Show>
         </div>
@@ -67,7 +68,9 @@ function StorageRow(props: { remote: RemoteSummary }) {
         })}>{action.pending() ? 'Loading…' : 'Check quota'}</button></Show>
       </div>
       <Show when={props.remote.config.remote} fallback={<span class="secondary">{providerName(props.remote.type)}</span>}>
-        {(target) => <span class="path secondary selectable">{target()}</span>}
+        {(target) => <span class="row path secondary selectable">
+          <ProviderIcon type={storageProvider(props.remote, props.remotes)} size="sm" />{target()}
+        </span>}
       </Show>
       <Show when={quota()}>{(value) => <Quota value={value()} label={`${props.remote.name} storage used`} />}</Show>
       <Feedback action={action} />
@@ -103,7 +106,7 @@ export function Dashboard(props: PageProps) {
               </div>
             </Show>
           }>{(name) => (
-            <StorageRow remote={remotes().find((remote) => remote.name === name)!} />
+            <StorageRow remote={remotes().find((remote) => remote.name === name)!} remotes={remotes()} />
           )}</For>
         </section>
         <section class="panel">
