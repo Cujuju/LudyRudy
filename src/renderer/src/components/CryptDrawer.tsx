@@ -52,7 +52,7 @@ export function CryptDrawer(props: { remotes: RemoteSummary[]; target?: string; 
                 () => untrack(() => navigator.clipboard.writeText(draft.salt ?? '')), 'Salt copied.')}><Copy size={14} aria-hidden="true" /></button>
           </SecretInput>
           <p class="banner">Save the password and any salt somewhere safe. You’ll need them to recover the vault.</p>
-          <div class="field">Filename encryption
+          <div class="setting-row"><span>Filename encryption</span>
             <Segmented label="Filename encryption" options={CIPHER_MODES} value={draft.filenameEncryption} onChange={(value) => setDraft('filenameEncryption', value)} />
           </div>
           <Toggle label="Encrypt directory names" checked={draft.directoryNameEncryption} onChange={(value) => setDraft('directoryNameEncryption', value)} />

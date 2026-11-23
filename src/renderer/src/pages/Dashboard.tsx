@@ -73,7 +73,7 @@ export function Dashboard(props: PageProps) {
   const runs = () => props.store.snapshot()?.jobRuns.slice(0, 3);
   return (
     <>
-      <PageHeader title="Dashboard" description="Monitor rclone, mounted drives, and storage activity.">
+      <PageHeader title="Dashboard">
         <button type="button" class="button" disabled={props.store.refreshing()} onClick={() => void props.store.refresh()}><RefreshCw size={15} /> Refresh</button>
       </PageHeader>
       <Telemetry store={props.store} navigate={props.navigate} />

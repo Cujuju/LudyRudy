@@ -12,7 +12,7 @@ import { Mounts } from './pages/Mounts';
 import { Remotes } from './pages/Remotes';
 import { Settings } from './pages/Settings';
 import { Transfers } from './pages/Transfers';
-import { createAppStore, type PageProps } from './store';
+import { createAppStore, type PageProps, type SettingsSection } from './store';
 
 const PAGES: Record<Page, Component<PageProps>> = { Dashboard, Remotes, Mounts, Browser, Transfers, Logs, Settings };
 const isPage = (value: unknown): value is Page => typeof value === 'string' && Object.hasOwn(PAGES, value);
@@ -72,17 +72,24 @@ export function App() {
   function navigate(next: Page): void {
     if (next === page()) return;
     rememberScroll();
+    if (next === 'Settings') store.setSettingsSection('General');
     writeView('page', setPage(next));
     scroller.focus();
+  }
+
+  function openSettings(section: SettingsSection): void {
+    navigate('Settings');
+    store.setSettingsSection(section);
   }
 
   return (
     <div class="shell">
       <TitleBar maximized={store.maximized()} stats={store.snapshot()?.stats} showTransfers={() => navigate('Transfers')} />
       <div class="shell-body">
-        <Sidebar page={page()} collapsed={collapsed()} daemon={store.snapshot()?.daemon.state ?? 'stopped'}
+        <Sidebar page={page()} collapsed={collapsed()} daemon={store.snapshot()?.daemon} prereqs={store.snapshot()?.prereqs}
           build={store.build()} mounts={store.snapshot()?.mounts.length ?? 0}
-          jobs={store.snapshot()?.jobRuns.filter((run) => run.state === 'running').length ?? 0} navigate={navigate} toggle={toggle} />
+          jobs={store.snapshot()?.jobRuns.filter((run) => run.state === 'running').length ?? 0} navigate={navigate}
+          openAbout={() => openSettings('About')} toggle={toggle} />
         <main class="page" ref={scroller} tabindex="-1" aria-label={page()}
           onScroll={rememberScroll}>
           <div class="page-content" ref={content}>

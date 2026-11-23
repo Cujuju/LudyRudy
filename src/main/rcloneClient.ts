@@ -14,7 +14,9 @@ export interface RcMountOptions {
   mountPoint: string;
   mountType?: string;
   mountOpt?: Record<string, string | boolean | number | string[]>;
-  vfsOpt?: { CacheMode: MountProfile['vfsCacheMode']; CacheMaxSize?: string; CacheMaxAge?: string; ReadOnly: boolean };
+  vfsOpt?: Record<string, string | boolean | number> & {
+    CacheMode: MountProfile['vfsCacheMode']; CacheMaxSize?: string; CacheMaxAge?: string; ReadOnly: boolean;
+  };
 }
 interface RcConfig { name: string; parameters: RemoteParameters; opt: { obscure: boolean; nonInteractive?: boolean } }
 interface RcSync { srcFs: string; dstFs: string; _async: true; _config: { DryRun: boolean }; _filter: { ExcludeRule: string[] } }

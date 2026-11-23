@@ -4,6 +4,7 @@ import { isAbsolute, normalize, parse } from 'node:path';
 import type { MountProfile } from '@shared/types';
 import { VFS_CACHE_MODES } from '@shared/types';
 import type { NoticeKind } from '@shared/notice';
+import { validateOptionMap } from '@shared/mountOptions';
 import { remoteFs, type RcMountOptions, type RcloneClient } from './rcloneClient';
 import { requireRemoteName } from './remoteService';
 
@@ -29,11 +30,15 @@ function mountPath(path: unknown): string {
 }
 
 export function mountOptions(profile: MountProfile): RcMountOptions {
+  const mountOpt = validateOptionMap('mount', profile.mountOpts);
+  // rclone's nested JSON tristate accepts booleans. An omitted key inherits the daemon default.
+  if (typeof mountOpt?.CaseInsensitive === 'string') mountOpt.CaseInsensitive = mountOpt.CaseInsensitive === 'true';
   return {
     fs: remoteFs(profile.remote, profile.remotePath), mountPoint: profile.mountPoint,
     ...(profile.mountType ? { mountType: profile.mountType } : {}),
-    mountOpt: { ExtraFlags: profile.extraFlags },
+    mountOpt: { ...mountOpt, ExtraFlags: profile.extraFlags },
     vfsOpt: {
+      ...validateOptionMap('vfs', profile.vfsOpts),
       CacheMode: profile.vfsCacheMode, ReadOnly: profile.readOnly,
       ...(profile.vfsCacheMaxSize ? { CacheMaxSize: profile.vfsCacheMaxSize } : {}),
       ...(profile.vfsCacheMaxAge ? { CacheMaxAge: profile.vfsCacheMaxAge } : {}),
@@ -63,12 +68,12 @@ export function openMountManager(context: MountContext) {
       const rc = context.client();
       const { remotes } = await rc.call('config/listremotes');
       if (!remotes?.includes(profile.remote)) throw new Error('Unknown rclone remote.');
+      const options = mountOptions({ ...profile, mountPoint: path });
       if (context.managed() && process.platform !== 'win32') {
         await mkdir(path, { recursive: true });
         const resolved = await realpath(path);
         if (!(await stat(resolved)).isDirectory() || resolved === parse(resolved).root) throw new Error('Invalid mount directory.');
       }
-      const options = mountOptions({ ...profile, mountPoint: path });
       const active = (await rc.mounts(process.platform === 'win32')).find((entry) => entry.mountPoint === path);
       if (active) {
         if (active.fs === options.fs) return active.mountPoint;
@@ -99,7 +104,10 @@ export function openMountManager(context: MountContext) {
       if (context.profiles().some((entry) => entry.id !== draft.id && mountPath(entry.mountPoint) === mountPoint)) {
         throw new Error('A profile already uses that mount point.');
       }
-      const profile = { ...draft, id: draft.id ?? randomUUID(), mountPoint, vfsCacheMode: draft.vfsCacheMode ?? context.defaults() };
+      const profile = {
+        ...draft, id: draft.id ?? randomUUID(), mountPoint, vfsCacheMode: draft.vfsCacheMode ?? context.defaults(),
+        mountOpts: validateOptionMap('mount', draft.mountOpts), vfsOpts: validateOptionMap('vfs', draft.vfsOpts),
+      };
       context.save([...context.profiles().filter(({ id }) => id !== profile.id), profile]);
       return profileFor(profile.id);
     },

@@ -47,7 +47,8 @@ function MountRow(props: MountProps & { profile?: MountProfile; external?: Activ
     <article class="ledger-row" classList={{ 'compact-mount': !props.detailed }} data-mount={props.profile?.id}>
       <div class="ledger-heading">
         <div class="row"><HardDrive size={17} /><strong>{props.profile?.name ?? 'External mount'}</strong>
-          <span class="chip" classList={{ positive: !!mount() }}>{mount() ? 'Mounted' : 'Unmounted'}</span></div>
+          <Show when={props.detailed}><span class="chip" classList={{ positive: !!mount() }}>{mount() ? 'Mounted' : 'Unmounted'}</span></Show>
+        </div>
         <Show when={props.profile}>{(profile) => (
           <div class="actions secondary">{profile().vfsCacheMode} VFS cache
             <Show when={props.detailed}>
