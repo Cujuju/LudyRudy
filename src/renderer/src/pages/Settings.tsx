@@ -1,4 +1,4 @@
-import { createSignal, For, Match, Show, Switch } from 'solid-js';
+import { For, Match, Show, Switch } from 'solid-js';
 import { NOTICE_DELIVERIES, NOTICE_POSITIONS, NOTICE_STYLES } from '@cujuju/electron-notices';
 import type { AppSettings } from '@shared/settings';
 import { DaemonSettings } from '../components/DaemonSettings';
@@ -6,9 +6,8 @@ import { ThemePicker } from '../components/ThemePicker';
 import { Feedback, PageHeader, SectionHeader, sentenceCase, Toggle } from '../components/ui';
 import { useAction } from '../lib/actions';
 import { trayName } from '../lib/platform';
-import type { PageProps } from '../store';
+import { SETTINGS_SECTIONS, type PageProps } from '../store';
 
-const SECTIONS = ['General', 'Daemon & Security', 'Notifications', 'About'] as const;
 const WINDOW_OPTIONS = [
   { key: 'launchAtLogin', label: 'Launch at login' },
   { key: 'startMinimized', label: 'Start minimized' },
@@ -82,13 +81,13 @@ function Notifications(props: PageProps) {
 }
 
 export function Settings(props: PageProps) {
-  const [section, setSection] = createSignal<typeof SECTIONS[number]>('General');
+  const section = () => props.store.settingsSection();
   return (
     <div class="settings-stack">
       <PageHeader title="Settings" description="Set app preferences, daemon defaults, and notifications." />
       <nav class="settings-nav" aria-label="Settings sections">
-        <For each={SECTIONS}>{(item) => <button type="button" aria-current={section() === item ? 'page' : undefined}
-          onClick={() => setSection(item)}>{item}</button>}</For>
+        <For each={SETTINGS_SECTIONS}>{(item) => <button type="button" aria-current={section() === item ? 'page' : undefined}
+          onClick={() => props.store.setSettingsSection(item)}>{item}</button>}</For>
       </nav>
       <Switch>
         <Match when={section() === 'General'}><General store={props.store} navigate={props.navigate} /></Match>

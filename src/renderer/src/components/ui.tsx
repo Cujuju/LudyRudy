@@ -72,11 +72,12 @@ export function Drawer(props: { title: string; description?: string; busy?: bool
   );
 }
 
-export function Toggle(props: { label: string; checked: boolean; disabled?: boolean; onChange: (checked: boolean) => void }) {
+export function Toggle(props: { label: string; hideLabel?: boolean; checked: boolean; disabled?: boolean; onChange: (checked: boolean) => void }) {
   return (
     <label class="setting-row">
-      <span>{props.label}</span>
-      <input class="toggle" type="checkbox" role="switch" checked={props.checked} disabled={props.disabled}
+      <Show when={!props.hideLabel}><span>{props.label}</span></Show>
+      <input class="toggle" type="checkbox" role="switch" aria-label={props.hideLabel ? props.label : undefined}
+        checked={props.checked} disabled={props.disabled}
         onChange={(event) => props.onChange(event.currentTarget.checked)} />
     </label>
   );

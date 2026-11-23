@@ -14,7 +14,9 @@ export interface RcMountOptions {
   mountPoint: string;
   mountType?: string;
   mountOpt?: Record<string, string | boolean | number | string[]>;
-  vfsOpt?: { CacheMode: MountProfile['vfsCacheMode']; CacheMaxSize?: string; CacheMaxAge?: string; ReadOnly: boolean };
+  vfsOpt?: Record<string, string | boolean | number> & {
+    CacheMode: MountProfile['vfsCacheMode']; CacheMaxSize?: string; CacheMaxAge?: string; ReadOnly: boolean;
+  };
 }
 interface RcConfig { name: string; parameters: RemoteParameters; opt: { obscure: boolean; nonInteractive?: boolean } }
 interface RcSync { srcFs: string; dstFs: string; _async: true; _config: { DryRun: boolean }; _filter: { ExcludeRule: string[] } }
@@ -147,11 +149,14 @@ export class RcloneClient {
     });
   }
 
-  async stats(): Promise<TransferStats> {
+  async stats(windows = false): Promise<TransferStats> {
     const [stats, limit] = await Promise.all([this.call('core/stats'), this.call('core/bwlimit')]);
     const { bytes, totalBytes, speed, eta, transfers, totalTransfers, checks, errors } = stats;
+    const fsDisplay = (value: unknown) => typeof value === 'string' && value ? describeFs(value, windows).display : null;
     return { bytes, totalBytes, speed, eta, transfers, totalTransfers, checks, errors,
-      transferring: (stats.transferring ?? []).map(({ name, bytes, size, speed, eta }) => ({ name, bytes, size, speed, eta })),
+      transferring: (stats.transferring ?? []).map(({ name, bytes, size, speed, eta, srcFs, dstFs }) => ({
+        name, bytes, size, speed, eta, srcFs: fsDisplay(srcFs), dstFs: fsDisplay(dstFs),
+      })),
       bwLimit: limit.rate };
   }
 

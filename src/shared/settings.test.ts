@@ -24,4 +24,18 @@ describe('normalizeSettings', () => {
     expect(settings.jobs).toMatchObject([{ id: 'backup', mode: 'sync', dryRunDefault: true }]);
     expect(normalizeSettings(settings)).toEqual(settings);
   });
+
+  it('discards invalid advanced entries while preserving valid and legacy mount options', () => {
+    const settings = normalizeSettings({
+      mounts: [{
+        id: 'vault', remote: 'gdrive-vault', mountPoint: '/mnt/vault', extraFlags: ['-o', 'ro'],
+        mountOpts: { CaseInsensitive: 'true', NoAppleDouble: false, Daemon: true, VolumeName: 'a\nb' },
+        vfsOpts: { PollInterval: '30s', ChunkStreams: 3, CacheMode: 'full', HandleCaching: false },
+      }],
+    });
+    expect(settings.mounts[0]).toMatchObject({ extraFlags: ['-o', 'ro'] });
+    expect(settings.mounts[0]?.mountOpts).toEqual({ CaseInsensitive: 'true', NoAppleDouble: false });
+    expect(settings.mounts[0]?.vfsOpts).toEqual({ PollInterval: '30s', ChunkStreams: 3 });
+    expect(normalizeSettings(settings)).toEqual(settings);
+  });
 });

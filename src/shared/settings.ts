@@ -1,5 +1,6 @@
 import { DEFAULT_NOTICE_CONFIG, normalizeNoticeConfig, type NoticeConfig } from '@cujuju/electron-notices';
 import { SYSTEM_THEME, THEME_CHOICES } from './themes';
+import { validateOptionMap } from './mountOptions';
 import { VFS_CACHE_MODES, type MountProfile, type SyncJob } from './types';
 
 export interface AppSettings {
@@ -31,6 +32,8 @@ function normalizeMounts(raw: unknown): MountProfile[] {
     vfsCacheMode: VFS_CACHE_MODES.find((mode) => mode === item.vfsCacheMode) ?? 'off',
     vfsCacheMaxSize: string(item.vfsCacheMaxSize), vfsCacheMaxAge: string(item.vfsCacheMaxAge),
     readOnly: bool(item.readOnly), extraFlags: strings(item.extraFlags),
+    mountOpts: validateOptionMap('mount', item.mountOpts, 'discard'),
+    vfsOpts: validateOptionMap('vfs', item.vfsOpts, 'discard'),
     ...(typeof item.mountType === 'string' ? { mountType: item.mountType } : {}),
   }));
 }

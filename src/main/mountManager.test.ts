@@ -49,6 +49,48 @@ describe('MountManager', () => {
     });
   });
 
+  it('saves advanced options and sends their typed values to mount/mount', async () => {
+    const { mounts, fetch } = fixture([draft]);
+    const profile = mounts.save({
+      ...draft,
+      mountOpts: { VolumeName: 'Test volume', CaseInsensitive: 'false', DirectIO: true },
+      vfsOpts: { HandleCaching: '6s', ChunkSize: '128Mi', ChunkStreams: 3, DirPerms: '0755', CaseInsensitive: true },
+    });
+    expect(profile.mountOpts?.CaseInsensitive).toBe('false');
+    await mounts.mountProfile(profile.id);
+    expect(String(fetch.mock.lastCall?.[0])).toBe('http://localhost:5572/mount/mount');
+    expect(JSON.parse(String(fetch.mock.lastCall?.[1]?.body))).toEqual({
+      fs: 'vault:subdir', mountPoint: draft.mountPoint, mountType: 'cmount',
+      mountOpt: { ExtraFlags: ['-o', 'ro'], VolumeName: 'Test volume', CaseInsensitive: false, DirectIO: true },
+      vfsOpt: {
+        CacheMode: 'writes', CacheMaxSize: '2G', CacheMaxAge: '12h', ReadOnly: true,
+        HandleCaching: '6s', ChunkSize: '128Mi', ChunkStreams: 3, DirPerms: '0755', CaseInsensitive: true,
+      },
+    });
+  });
+
+  it.each<Partial<Pick<MountProfile, 'mountOpts' | 'vfsOpts'>>>([
+    { mountOpts: { ExtraFlags: 'shadowed' } },
+    { vfsOpts: { ReadOnly: false } },
+    { mountOpts: { Daemon: true } },
+    { vfsOpts: { DirectIO: true } },
+    { mountOpts: { debug_fuse: true } },
+    { mountOpts: { DirectIO: 'true' } },
+    { mountOpts: { CaseInsensitive: 'unset' } },
+    { mountOpts: { VolumeName: 'test\x00name' } },
+    { vfsOpts: { ChunkStreams: 1.5 } },
+    { vfsOpts: { UID: -1 } },
+    { vfsOpts: { DirPerms: '999' } },
+    { vfsOpts: { HandleCaching: 'soon' } },
+    { vfsOpts: { ChunkSize: 'lots' } },
+  ])('rejects invalid overrides at save and RC serialization (%j)', (invalid) => {
+    const { mounts } = fixture([draft]);
+    const profile = { ...draft, ...invalid };
+    expect(() => mounts.save(profile)).toThrow(/option|Invalid value/);
+    expect(() => mountOptions(profile)).toThrow(/option|Invalid value/);
+    expect(mounts.list()).toEqual([draft]);
+  });
+
   it('creates and updates profiles, and restricts paths used to reveal a mount', async () => {
     const { mounts, reveal } = fixture([]);
     const { id: _, ...withoutId } = draft;

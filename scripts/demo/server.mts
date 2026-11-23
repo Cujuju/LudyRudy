@@ -46,7 +46,10 @@ const PROVIDERS = [
     { Name: 'port', Default: 22, Advanced: true },
   ] : ['drive', 'onedrive', 'dropbox', 'box', 'pcloud'].includes(Name ?? '') ? [{ Name: 'token' }] : [],
 }));
-const TRANSFER = { name: 'Photos/field-trip.zip', size: 512 * MIB, bytes: 256 * MIB, speed: 8 * MIB, eta: 32 };
+const TRANSFER = {
+  name: 'Photos/field-trip.zip', size: 512 * MIB, bytes: 256 * MIB, speed: 8 * MIB, eta: 32,
+  srcFs: 'gdrive:Photos', dstFs: 'gdrive-vault:Archive',
+};
 
 export async function startDemoRclone() {
   const auth = `demo:${randomUUID()}`;

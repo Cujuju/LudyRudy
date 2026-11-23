@@ -1,3 +1,5 @@
+import type { MountOptionMap } from './mountOptions';
+
 export interface DaemonStatus {
   state: 'stopped' | 'starting' | 'running' | 'error';
   endpoint: string | null;
@@ -55,6 +57,8 @@ export interface MountProfile {
   vfsCacheMaxAge: string;
   readOnly: boolean;
   extraFlags: string[];
+  mountOpts?: MountOptionMap;
+  vfsOpts?: MountOptionMap;
   mountType?: string;
 }
 
@@ -89,6 +93,8 @@ export interface TransferItem {
   size: number;
   speed: number;
   eta: number | null;
+  srcFs?: string | null;
+  dstFs?: string | null;
 }
 
 export interface TransferStats {

@@ -5,9 +5,13 @@ import type { BuildInfo } from '@shared/buildInfo';
 import type { AppSnapshot } from '@shared/ipc';
 import { DEFAULT_SETTINGS, type AppSettings } from '@shared/settings';
 
+export const SETTINGS_SECTIONS = ['General', 'Daemon & Security', 'Notifications', 'About'] as const;
+export type SettingsSection = typeof SETTINGS_SECTIONS[number];
+
 export function createAppStore() {
   const api = window.api;
   const [settings, setSettings] = createSignal(DEFAULT_SETTINGS);
+  const [settingsSection, setSettingsSection] = createSignal<SettingsSection>('General');
   const [build, setBuild] = createSignal<BuildInfo>();
   const [snapshot, setSnapshot] = createSignal<AppSnapshot>();
   const [logs, setLogs] = createSignal<LogLine[]>([]);
@@ -75,7 +79,8 @@ export function createAppStore() {
     }
   }
 
-  return { settings, build, snapshot, logs, auth, browserTarget, setBrowserTarget, maximized, ready, error, refreshing, updateGeneral, refresh };
+  return { settings, settingsSection, setSettingsSection, build, snapshot, logs, auth, browserTarget, setBrowserTarget,
+    maximized, ready, error, refreshing, updateGeneral, refresh };
 }
 
 export type AppStore = ReturnType<typeof createAppStore>;

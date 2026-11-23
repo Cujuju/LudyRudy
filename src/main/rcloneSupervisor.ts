@@ -121,7 +121,7 @@ export function openDaemon(hooks: Hooks = {}) {
       const { version, os } = await client.call('core/version');
       if (typeof version !== 'string' || !version) throw new Error('rclone returned no version.');
       const [remotes, mounts, stats, pid, paths] = await Promise.allSettled([
-        client.listRemotes(os === 'windows'), client.mounts(os === 'windows'), client.stats(),
+        client.listRemotes(os === 'windows'), client.mounts(os === 'windows'), client.stats(os === 'windows'),
         client.call('core/pid'), client.call('config/paths'),
       ]);
       if (client !== rc) return snapshot;

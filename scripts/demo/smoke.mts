@@ -105,6 +105,16 @@ async function verifyUi(page: Cdp, abort: () => string | null) {
   )) || null, abort);
 
   await openPage(page, 'Dashboard', abort);
+  const sidebarExpanded = (value: boolean) => until('sidebar toggle', async () => (await page.eval<boolean>(
+    `document.querySelector('.sidebar-toggle').getAttribute('aria-expanded') === "${value}"`,
+  )) || null, abort);
+  await page.eval("document.querySelector('.sidebar-toggle').click()");
+  await sidebarExpanded(false);
+  await page.eval(`document.querySelector('.nav-btn[aria-label="Dashboard"]').dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))`);
+  await sidebarExpanded(true);
+  await page.eval("document.querySelector('.build-card').click()");
+  await contains('About ludyRudy');
+  await openPage(page, 'Dashboard', abort);
   await click('New mount');
   await contains('VFS cache mode', 'dialog[open]');
   await page.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
@@ -118,6 +128,28 @@ async function verifyUi(page: Cdp, abort: () => string | null) {
   await input('dialog input', 'Unsaved archive');
   await click('Close drawer', 'dialog[open]');
   await contains('Archive Bucket', archive);
+  await click('Edit', archive);
+  const editedOptions = await page.eval<boolean>(`(() => {
+    const drawer = document.querySelector('dialog[open]');
+    if (drawer.querySelector('[aria-label="Custom cache max size"]')?.value !== '4G') return false;
+    const picker = drawer.querySelector('.input-group select');
+    if (picker.value !== '') return false;
+    const add = (flag) => {
+      picker.value = flag;
+      picker.dispatchEvent(new Event('change', { bubbles: true }));
+    };
+    add('--direct-io');
+    add('--dir-cache-time');
+    if (picker.value !== '' || !drawer.querySelector('[aria-label="--direct-io"]')?.checked) return false;
+    drawer.querySelector('[aria-label="Remove --direct-io"]').click();
+    return !drawer.querySelector('[aria-label="--direct-io"]') && drawer.querySelector('[aria-label="--dir-cache-time"]')?.value === '5m';
+  })()`);
+  if (!editedOptions) throw new Error('Mount pickers did not initialize or update as expected.');
+  await input('dialog [aria-label="--dir-cache-time"]', '10m');
+  await click('Save profile', 'dialog[open]');
+  await until('mount options saved', async () => (await page.eval<boolean>(`window.api.initialize().then(({settings}) =>
+    settings.mounts.some((mount) => mount.id === 'archive-bucket' && mount.vfsCacheMaxSize === '4G' &&
+      mount.vfsOpts?.DirCacheTime === '10m' && !mount.mountOpts))`)) || null, abort);
   await click('Mount drive', archive);
   await contains('Drive mounted.', archive);
   await click('Refresh VFS cache', archive);
@@ -179,4 +211,6 @@ async function verifyUi(page: Cdp, abort: () => string | null) {
   await contains('Daemon error alerts');
   await click('Send test notice');
   await contains('Test notice requested.');
+  await page.eval("document.querySelector('.build-card').click()");
+  await contains('About ludyRudy');
 }

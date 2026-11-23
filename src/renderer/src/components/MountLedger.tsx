@@ -1,12 +1,27 @@
 import { For, Show, untrack } from 'solid-js';
-import { ExternalLink, HardDrive, Plus } from 'lucide-solid';
+import { Activity, ExternalLink, HardDrive, Plus } from 'lucide-solid';
 import type { ActiveMount, MountProfile } from '@shared/types';
 import type { PageProps } from '../store';
 import { useAction } from '../lib/actions';
+import { formatSpeed } from '../lib/format';
 import { Confirm, Empty, Feedback, SectionHeader } from './ui';
 import { VolumeConduit } from './VolumeConduit';
 
 type MountProps = PageProps & { detailed?: boolean; edit?: (profile: MountProfile) => void; add: () => void };
+
+function parseSpec(value: string | null | undefined): { remote: string; path: string } | null {
+  if (!value) return null;
+  const colon = value.indexOf(':');
+  if (colon <= 0) return null;
+  return { remote: value.slice(0, colon), path: value.slice(colon + 1).replace(/^\/+|\/+$/g, '') };
+}
+
+function matchesMount(transferFs: string | null | undefined, mountSpec: string): boolean {
+  const transfer = parseSpec(transferFs);
+  const mount = parseSpec(mountSpec);
+  if (!transfer || !mount || transfer.remote !== mount.remote) return false;
+  return !mount.path || transfer.path === mount.path || transfer.path.startsWith(`${mount.path}/`);
+}
 
 export function Prerequisites(props: PageProps & { mountingOnly?: boolean }) {
   const action = useAction();
@@ -41,13 +56,23 @@ function MountRow(props: MountProps & { profile?: MountProfile; external?: Activ
   const path = () => mount()?.mountPoint ?? props.profile?.mountPoint ?? '';
   const spec = () => mount()?.fs ?? `${props.profile?.remote}:${props.profile?.remotePath}`;
   const remote = () => props.store.snapshot()?.remotes.find(({ name }) => name === (props.profile?.remote ?? spec().split(':')[0]));
+  const activeTransfers = () => (props.store.snapshot()?.stats?.transferring ?? []).filter(
+    (item) => matchesMount(item.srcFs, spec()) || matchesMount(item.dstFs, spec()),
+  );
+  const transferSpeed = () => activeTransfers().reduce((sum, item) => sum + item.speed, 0);
   const canMount = () => props.store.snapshot()?.daemon.state === 'running' && !!remote()
     && (props.store.snapshot()?.daemon.attached || props.store.snapshot()?.prereqs.mountBackend.available);
   return (
     <article class="ledger-row" classList={{ 'compact-mount': !props.detailed }} data-mount={props.profile?.id}>
       <div class="ledger-heading">
         <div class="row"><HardDrive size={17} /><strong>{props.profile?.name ?? 'External mount'}</strong>
-          <span class="chip" classList={{ positive: !!mount() }}>{mount() ? 'Mounted' : 'Unmounted'}</span></div>
+          <Show when={props.detailed}><span class="chip" classList={{ positive: !!mount() }}>{mount() ? 'Mounted' : 'Unmounted'}</span></Show>
+          <Show when={activeTransfers().length}>
+            <button type="button" class="transfer-pill" onClick={() => props.navigate('Transfers')}>
+              <Activity size={13} aria-hidden="true" /> {activeTransfers().length} active <span>{formatSpeed(transferSpeed())}</span>
+            </button>
+          </Show>
+        </div>
         <Show when={props.profile}>{(profile) => (
           <div class="actions secondary">{profile().vfsCacheMode} VFS cache
             <Show when={props.detailed}>
