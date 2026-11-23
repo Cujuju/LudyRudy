@@ -2,9 +2,9 @@ import { createMemo, createResource, createSignal, For, Match, Show, Switch, unt
 import AnchoredPopover from '@cujuju/solidjs-anchored-popover';
 import { GlassMenu } from '@cujuju/solidjs-glass-menu';
 import {
-  ArrowDown, ArrowUp, ArrowUpDown, ChevronRight, Columns3, Download, File, FileArchive, FileCode,
+  ArrowDown, ArrowUp, ArrowUpDown, ChevronRight, Download, File, FileArchive, FileCode,
   FileImage, FileMusic, FileSpreadsheet, FileText, FileVideoCamera, Folder, FolderPlus,
-  Pencil, Presentation, RefreshCw, Trash2, Upload,
+  Pencil, Presentation, RefreshCw, Settings, Trash2, Upload,
 } from 'lucide-solid';
 import type { RemoteEntry } from '@shared/types';
 import { ProviderIcon } from '../components/ProviderIcon';
@@ -92,8 +92,8 @@ function ColumnPicker(props: { visible: readonly BrowserColumnKey[]; onToggle: (
   const [anchor, setAnchor] = createSignal<HTMLElement | null>(null);
   return (
     <>
-      <button ref={setAnchor} type="button" class="button" aria-haspopup="dialog" aria-expanded={open()} onClick={() => setOpen((v) => !v)}>
-        <Columns3 size={15} aria-hidden="true" /> Columns
+      <button ref={setAnchor} type="button" class="icon-button column-picker-trigger" aria-label="Configure columns" title="Configure columns" aria-haspopup="dialog" aria-expanded={open()} onClick={() => setOpen((v) => !v)}>
+        <Settings size={15} aria-hidden="true" />
       </button>
       <AnchoredPopover open={open} anchor={anchor} onDismiss={() => setOpen(false)} placement="below-end">
         <GlassMenu class="column-picker-panel" surface="plain" tabIndex={-1}>
@@ -224,7 +224,6 @@ export function Browser(props: PageProps) {
             </label>
             <div class="actions">
               <SearchField label="Filter filenames" value={filter()} onInput={setFilter} />
-              <ColumnPicker visible={columns()} onToggle={toggleColumn} onReset={resetColumns} />
               <button type="button" class="button" onClick={newFolder}><FolderPlus size={15} /> New folder</button>
               <button type="button" class="button" disabled={!nativeTransfers() || action.pending()}
                 title={nativeTransfers() ? undefined : 'File uploads require the managed daemon.'} onClick={() => void action.run(async () => {
@@ -242,6 +241,7 @@ export function Browser(props: PageProps) {
                   onClick={() => go(selection(), parts().slice(0, index() + 1).join('/'))}>{part}</button>
               </div>
             )}</For>
+            <ColumnPicker visible={columns()} onToggle={toggleColumn} onReset={resetColumns} />
           </nav>
           <div class="table-scroll">
             <table class="file-table" aria-label="Remote files">
