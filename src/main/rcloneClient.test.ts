@@ -37,6 +37,23 @@ describe('RcloneClient', () => {
     await expect(client.call('core/version')).rejects.toThrow('invalid JSON data');
     expect(() => new RcloneClient('file:///tmp/rclone')).toThrow('HTTP(S)');
   });
+
+  it('uses distinct timeouts for local RPCs, remote cloud operations, mounts, and file mutations', async () => {
+    const timeoutSpy = vi.spyOn(AbortSignal, 'timeout');
+    vi.stubGlobal('fetch', vi.fn<typeof globalThis.fetch>().mockImplementation(async () => Response.json({})));
+    const client = new RcloneClient('http://localhost:5572');
+    try {
+      await client.call('core/version');
+      await client.call('operations/stat', { fs: 'gdrive:', remote: '' });
+      await client.call('operations/list', { fs: 'gdrive:', remote: '' });
+      await client.call('operations/about', { fs: 'gdrive:' });
+      await client.call('mount/mount', { fs: 'gdrive:', mountPoint: '/mnt/gdrive' });
+      await client.call('operations/copyfile', { srcFs: 'gdrive:', srcRemote: 'a', dstFs: 'gdrive:', dstRemote: 'b' });
+      expect(timeoutSpy.mock.calls.map(([ms]) => ms)).toEqual([5_000, 30_000, 30_000, 30_000, 60_000, 1_800_000]);
+    } finally {
+      timeoutSpy.mockRestore();
+    }
+  });
 });
 
 describe('remote config projection', () => {

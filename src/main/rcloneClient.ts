@@ -67,6 +67,10 @@ interface RcMethods {
 }
 
 const REQUEST_TIMEOUT_MS = 5_000;
+const REMOTE_OPERATION_TIMEOUT_MS = 30_000;
+const REMOTE_OPERATIONS = new Set<keyof RcMethods>([
+  'operations/stat', 'operations/list', 'operations/about', 'operations/mkdir', 'operations/deletefile', 'vfs/refresh',
+]);
 const FILE_MUTATION_TIMEOUT_MS = 30 * 60_000;
 const FILE_MUTATIONS = new Set<keyof RcMethods>(['sync/move', 'operations/copyfile', 'operations/movefile', 'operations/purge']);
 const MOUNT_TIMEOUT_MS = 60_000;
@@ -113,7 +117,13 @@ export class RcloneClient {
   }
 
   async call<K extends keyof RcMethods>(method: K, ...args: {} extends RcMethods[K][0] ? [RcMethods[K][0]?] : [RcMethods[K][0]]): Promise<RcMethods[K][1]> {
-    const timeout = FILE_MUTATIONS.has(method) ? FILE_MUTATION_TIMEOUT_MS : method === 'mount/mount' ? MOUNT_TIMEOUT_MS : REQUEST_TIMEOUT_MS;
+    const timeout = FILE_MUTATIONS.has(method)
+      ? FILE_MUTATION_TIMEOUT_MS
+      : method === 'mount/mount'
+        ? MOUNT_TIMEOUT_MS
+        : REMOTE_OPERATIONS.has(method)
+          ? REMOTE_OPERATION_TIMEOUT_MS
+          : REQUEST_TIMEOUT_MS;
     const signal = AbortSignal.timeout(timeout);
     const response = await fetch(new URL(method, this.endpoint), {
       method: 'POST', headers: this.headers, signal, redirect: 'error', body: JSON.stringify(args[0] ?? {}),
