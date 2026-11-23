@@ -11,6 +11,8 @@
   width: var(--icon-button-size);
 }
 .icon-button:hover { color: var(--color-text); background: var(--color-nav-hover); }
+.icon-button.danger-text { color: color-mix(in srgb, var(--color-red-light) 82%, var(--color-text-secondary)); }
+.icon-button.danger-text:not(:disabled):hover { color: var(--color-red-light); background: var(--color-red-subtle); }
 .status-dot { width: var(--dot-size); height: var(--dot-size); border-radius: 50%; background: var(--color-text-muted); }
 .status-dot[data-state='running'] { background: var(--color-green); }
 .status-dot[data-state='starting'] { background: var(--color-amber); }

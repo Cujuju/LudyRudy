@@ -33,7 +33,7 @@ export function Feedback(props: { action: ReturnType<typeof useAction> }) {
   );
 }
 
-export function Confirm(props: { label: string; question: string; disabled?: boolean; action: () => Promise<unknown> }) {
+export function Confirm(props: { label: string; question: string; icon?: JSX.Element; disabled?: boolean; action: () => Promise<unknown> }) {
   const [armed, setArmed] = createSignal(false);
   const status = useAction();
 
@@ -42,7 +42,13 @@ export function Confirm(props: { label: string; question: string; disabled?: boo
   }
 
   return (
-    <Show when={armed()} fallback={<button type="button" class="button quiet danger-text" disabled={props.disabled} onClick={() => setArmed(true)}>{props.label}</button>}>
+    <Show when={armed()} fallback={
+      <Show when={props.icon} fallback={
+        <button type="button" class="button quiet danger-text" disabled={props.disabled} onClick={() => setArmed(true)}>{props.label}</button>
+      }>
+        <button type="button" class="icon-button danger-text" aria-label={props.label} title={props.label} disabled={props.disabled} onClick={() => setArmed(true)}>{props.icon}</button>
+      </Show>
+    }>
       <div class="confirm" role="group" aria-label={props.question}>
         <span>{props.question}</span>
         <button type="button" class="button" disabled={status.pending()} onClick={() => { status.clear(); setArmed(false); }}>Cancel</button>

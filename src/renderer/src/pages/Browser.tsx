@@ -1,15 +1,55 @@
-import { createMemo, createResource, createSignal, For, Show, untrack } from 'solid-js';
-import { ChevronRight, File, Folder, FolderPlus, RefreshCw, Upload } from 'lucide-solid';
+import { createMemo, createResource, createSignal, For, Match, Show, Switch, untrack } from 'solid-js';
+import {
+  ArrowDown, ArrowUp, ArrowUpDown, ChevronRight, Download, File, FileArchive, FileCode,
+  FileImage, FileMusic, FileSpreadsheet, FileText, FileVideoCamera, Folder, FolderPlus,
+  Pencil, Presentation, RefreshCw, Trash2, Upload,
+} from 'lucide-solid';
 import type { RemoteEntry } from '@shared/types';
 import { ProviderIcon } from '../components/ProviderIcon';
 import { Quota } from '../components/Quota';
 import { Confirm, Drawer, Empty, Feedback, FormActions, PageHeader, SearchField, Select } from '../components/ui';
 import { errorMessage, useAction } from '../lib/actions';
+import { classifyEntry, nextSort, sortEntries, type FileKind, type SortKey, type SortState } from '../lib/fileTypes';
 import { formatBytes, formatTime } from '../lib/format';
 import { remoteOptions } from '../lib/remotes';
 import type { PageProps } from '../store';
 
 type Edit = { label: string; initial: string; submit: (path: string) => Promise<void> };
+
+function EntryIcon(props: { kind: FileKind }) {
+  return (
+    <Switch fallback={<File size={16} class="entry-icon" data-kind={props.kind} aria-hidden="true" />}>
+      <Match when={props.kind === 'folder'}><Folder size={16} class="entry-icon" data-kind="folder" aria-hidden="true" /></Match>
+      <Match when={props.kind === 'image'}><FileImage size={16} class="entry-icon" data-kind="image" aria-hidden="true" /></Match>
+      <Match when={props.kind === 'video'}><FileVideoCamera size={16} class="entry-icon" data-kind="video" aria-hidden="true" /></Match>
+      <Match when={props.kind === 'audio'}><FileMusic size={16} class="entry-icon" data-kind="audio" aria-hidden="true" /></Match>
+      <Match when={props.kind === 'spreadsheet'}><FileSpreadsheet size={16} class="entry-icon" data-kind="spreadsheet" aria-hidden="true" /></Match>
+      <Match when={props.kind === 'presentation'}><Presentation size={16} class="entry-icon" data-kind="presentation" aria-hidden="true" /></Match>
+      <Match when={props.kind === 'code'}><FileCode size={16} class="entry-icon" data-kind="code" aria-hidden="true" /></Match>
+      <Match when={props.kind === 'archive'}><FileArchive size={16} class="entry-icon" data-kind="archive" aria-hidden="true" /></Match>
+      <Match when={props.kind === 'pdf' || props.kind === 'document' || props.kind === 'text'}>
+        <FileText size={16} class="entry-icon" data-kind={props.kind} aria-hidden="true" />
+      </Match>
+    </Switch>
+  );
+}
+
+function SortHeader(props: { label: string; sortKey: SortKey; sort: SortState; onSort: (key: SortKey) => void }) {
+  const active = () => props.sort.key === props.sortKey;
+  const ariaSort = () => (active() ? (props.sort.direction === 'asc' ? 'ascending' : 'descending') : 'none');
+  return (
+    <th aria-sort={ariaSort()}>
+      <button type="button" class="sort-button" data-active={active()} onClick={() => props.onSort(props.sortKey)}>
+        {props.label}
+        <Show when={active()} fallback={<ArrowUpDown size={13} class="sort-icon" aria-hidden="true" />}>
+          <Show when={props.sort.direction === 'asc'} fallback={<ArrowDown size={13} class="sort-icon" aria-hidden="true" />}>
+            <ArrowUp size={13} class="sort-icon" aria-hidden="true" />
+          </Show>
+        </Show>
+      </button>
+    </th>
+  );
+}
 
 function PathDialog(props: { edit: Edit; close: () => void }) {
   const action = useAction();
@@ -30,6 +70,7 @@ function PathDialog(props: { edit: Edit; close: () => void }) {
 
 export function Browser(props: PageProps) {
   const [filter, setFilter] = createSignal('');
+  const [sort, setSort] = createSignal<SortState>({ key: 'name', direction: 'asc' });
   const [edit, setEdit] = createSignal<Edit>();
   const action = useAction();
   const remotes = () => props.store.snapshot()?.remotes ?? [];
@@ -59,8 +100,12 @@ export function Browser(props: PageProps) {
   });
   const currentQuota = () => quota()?.name === selection() ? quota() : undefined;
   const current = () => entries()?.target === request() ? entries() : undefined;
-  const filtered = createMemo(() => (current()?.items ?? []).filter((entry) => entry.name.toLowerCase().includes(filter().toLowerCase()))
-    .sort((a, b) => Number(b.isDir) - Number(a.isDir) || a.name.localeCompare(b.name, undefined, { numeric: true })));
+  const filtered = createMemo(() => {
+    const query = filter().toLowerCase();
+    const items = (current()?.items ?? []).filter((entry) => entry.name.toLowerCase().includes(query));
+    return sortEntries(items, sort());
+  });
+  const toggleSort = (key: SortKey) => setSort((prev) => nextSort(prev, key));
   const parts = createMemo(() => path().split('/').filter(Boolean));
   const go = (name: string, next: string) => {
     action.clear();
@@ -133,26 +178,49 @@ export function Browser(props: PageProps) {
           </nav>
           <div class="table-scroll">
             <table class="file-table" aria-label="Remote files">
-              <thead><tr><th>Name</th><th>Size</th><th>Modified</th><th>Actions</th></tr></thead>
+              <thead>
+                <tr>
+                  <SortHeader label="Name" sortKey="name" sort={sort()} onSort={toggleSort} />
+                  <SortHeader label="Type" sortKey="type" sort={sort()} onSort={toggleSort} />
+                  <SortHeader label="Size" sortKey="size" sort={sort()} onSort={toggleSort} />
+                  <SortHeader label="Modified" sortKey="modTime" sort={sort()} onSort={toggleSort} />
+                  <th>Actions</th>
+                </tr>
+              </thead>
               <tbody>
-                <For each={filtered()}>{(entry) => (
-                  <tr data-entry={entry.path}>
-                    <td>
-                      <Show when={entry.isDir} fallback={<span class="row"><File size={16} />{entry.name}</span>}>
-                        <button type="button" class="text-button row" onClick={() => go(selection(), entry.path)}><Folder size={16} />{entry.name}</button>
-                      </Show>
-                    </td>
-                    <td class="secondary numeric">{entry.isDir ? 'Folder' : formatBytes(entry.size)}</td>
-                    <td class="secondary numeric">{formatTime(entry.modTime)}</td>
-                    <td><div class="actions">
-                      <Show when={!entry.isDir}><button type="button" class="button quiet" disabled={!nativeTransfers() || action.pending()}
-                        title={nativeTransfers() ? undefined : 'File downloads require the managed daemon.'}
-                        onClick={() => void action.run(() => untrack(() => window.api.downloadFile(selection(), entry.path, entry.name)))}>Download</button></Show>
-                      <button type="button" class="button quiet" onClick={() => rename(entry)}>Rename or move</button>
-                      <Confirm label="Delete" question={entry.isDir ? `Delete ${entry.name} and everything inside it?` : `Delete ${entry.name}?`} action={() => remove(entry)} />
-                    </div></td>
-                  </tr>
-                )}</For>
+                <For each={filtered()}>{(entry) => {
+                  const info = classifyEntry(entry);
+                  return (
+                    <tr data-entry={entry.path}>
+                      <td>
+                        <Show when={entry.isDir} fallback={<span class="row"><EntryIcon kind={info.kind} />{entry.name}</span>}>
+                          <button type="button" class="text-button row" onClick={() => go(selection(), entry.path)}>
+                            <EntryIcon kind={info.kind} />{entry.name}
+                          </button>
+                        </Show>
+                      </td>
+                      <td class="secondary">{info.label}</td>
+                      <td class="secondary numeric">{entry.isDir ? '—' : formatBytes(entry.size)}</td>
+                      <td class="secondary numeric">{formatTime(entry.modTime)}</td>
+                      <td><div class="actions">
+                        <Show when={!entry.isDir}>
+                          <button type="button" class="icon-button" aria-label="Download"
+                            disabled={!nativeTransfers() || action.pending()}
+                            title={nativeTransfers() ? 'Download' : 'File downloads require the managed daemon.'}
+                            onClick={() => void action.run(() => untrack(() => window.api.downloadFile(selection(), entry.path, entry.name)))}>
+                            <Download size={15} aria-hidden="true" />
+                          </button>
+                        </Show>
+                        <button type="button" class="icon-button" aria-label="Rename or move" title="Rename or move" onClick={() => rename(entry)}>
+                          <Pencil size={15} aria-hidden="true" />
+                        </button>
+                        <Confirm label="Delete" icon={<Trash2 size={15} aria-hidden="true" />}
+                          question={entry.isDir ? `Delete ${entry.name} and everything inside it?` : `Delete ${entry.name}?`}
+                          action={() => remove(entry)} />
+                      </div></td>
+                    </tr>
+                  );
+                }}</For>
               </tbody>
             </table>
           </div>
