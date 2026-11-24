@@ -1,4 +1,4 @@
-import { createMemo, createResource, createSignal, For, Match, Show, Switch, untrack } from 'solid-js';
+import { createEffect, createMemo, createSignal, For, Match, Show, Switch, untrack } from 'solid-js';
 import AnchoredPopover from '@cujuju/solidjs-anchored-popover';
 import { GlassMenu } from '@cujuju/solidjs-glass-menu';
 import {
@@ -6,11 +6,12 @@ import {
   FileImage, FileMusic, FileSpreadsheet, FileText, FileVideoCamera, Folder, FolderPlus,
   Pencil, Presentation, RefreshCw, Settings, Trash2, Upload,
 } from 'lucide-solid';
-import type { RemoteEntry } from '@shared/types';
+import type { RemoteEntry, RemoteQuota } from '@shared/types';
 import { ProviderIcon } from '../components/ProviderIcon';
 import { Quota } from '../components/Quota';
 import { Confirm, Drawer, Empty, Feedback, FormActions, PageHeader, SearchField, Select } from '../components/ui';
 import { errorMessage, useAction } from '../lib/actions';
+import { parentRemotePath } from '../lib/browserCache';
 import {
   BROWSER_COLUMNS, classifyEntry, DEFAULT_BROWSER_COLUMNS, isBrowserColumnList, nextSort, sortEntries,
   type BrowserColumnKey, type FileKind, type SortKey, type SortState,
@@ -133,23 +134,86 @@ export function Browser(props: PageProps) {
   const path = createMemo(() => props.store.browserTarget()?.remote === selection() ? props.store.browserTarget()?.path ?? '' : '');
   const remote = () => remotes().find(({ name }) => name === selection());
   const request = createMemo(() => connected() && selection() ? { remote: selection(), path: path() } : false);
-  const [entries, listing] = createResource(request, async (target) => {
-    try {
-      return { target, items: await window.api.browse(target.remote, target.path), error: '' };
-    } catch (cause) {
-      return { target, items: [], error: errorMessage(cause) };
+  const cache = untrack(() => props.store.browserCache);
+  type ListingState = { target: { remote: string; path: string }; items: RemoteEntry[]; loading: boolean; error: string };
+  type QuotaState = { name: string; value: RemoteQuota | null; loading: boolean; error: string };
+  const [entries, setEntries] = createSignal<ListingState>();
+  const [quota, setQuota] = createSignal<QuotaState>();
+  let listingSeq = 0;
+  let quotaSeq = 0;
+
+  async function loadListing(target: { remote: string; path: string }, force = false): Promise<void> {
+    const seq = ++listingSeq;
+    const cached = force ? undefined : cache.peekDirectory(target.remote, target.path);
+    if (cached) {
+      setEntries({ target, items: cached.items, loading: !cached.fresh, error: '' });
+      if (cached.fresh) return;
+    } else {
+      const prev = untrack(entries);
+      const keep = prev?.target.remote === target.remote && prev.target.path === target.path ? prev.items : [];
+      setEntries({ target, items: keep, loading: true, error: '' });
     }
+    try {
+      const items = await cache.loadDirectory(
+        target.remote, target.path, () => window.api.browse(target.remote, target.path), { force: force || !!cached },
+      );
+      if (seq === listingSeq) setEntries({ target, items, loading: false, error: '' });
+    } catch (cause) {
+      if (seq !== listingSeq) return;
+      const prev = untrack(entries);
+      const keep = prev?.target.remote === target.remote && prev.target.path === target.path ? prev.items : [];
+      setEntries({ target, items: keep, loading: false, error: errorMessage(cause) });
+    }
+  }
+
+  async function loadQuota(name: string, force = false): Promise<void> {
+    const seq = ++quotaSeq;
+    const cached = force ? undefined : cache.peekQuota(name);
+    if (cached) {
+      setQuota({ name, value: cached.value, loading: !cached.fresh, error: '' });
+      if (cached.fresh) return;
+    } else {
+      const prev = untrack(quota);
+      setQuota({ name, value: prev?.name === name ? prev.value : null, loading: true, error: '' });
+    }
+    try {
+      const value = await cache.loadQuota(name, () => window.api.quota(name), { force: force || !!cached });
+      if (seq === quotaSeq) setQuota({ name, value, loading: false, error: '' });
+    } catch (cause) {
+      if (seq !== quotaSeq) return;
+      const prev = untrack(quota);
+      setQuota({ name, value: prev?.name === name ? prev.value : null, loading: false, error: errorMessage(cause) });
+    }
+  }
+
+  createEffect(() => {
+    const target = request();
+    if (!target) {
+      listingSeq += 1;
+      setEntries(undefined);
+      return;
+    }
+    void loadListing(target);
   });
+
   const quotaSource = createMemo(() => connected() && selection());
-  const [quota, quotaActions] = createResource(quotaSource, async (name) => {
-    try {
-      return { name, value: await window.api.quota(name), error: '' };
-    } catch (cause) {
-      return { name, value: null, error: errorMessage(cause) };
+  createEffect(() => {
+    const name = quotaSource();
+    if (!name) {
+      quotaSeq += 1;
+      setQuota(undefined);
+      return;
     }
+    void loadQuota(name);
   });
+
   const currentQuota = () => quota()?.name === selection() ? quota() : undefined;
-  const current = () => entries()?.target === request() ? entries() : undefined;
+  const current = () => {
+    const state = entries();
+    const target = request();
+    return state && target && state.target.remote === target.remote && state.target.path === target.path ? state : undefined;
+  };
+  const listingLoading = () => current()?.loading ?? false;
   const filtered = createMemo(() => {
     const query = filter().toLowerCase();
     const items = (current()?.items ?? []).filter((entry) => entry.name.toLowerCase().includes(query));
@@ -175,14 +239,21 @@ export function Browser(props: PageProps) {
     setFilter('');
     props.store.setBrowserTarget({ remote: name, path: next });
   };
-  const refresh = async () => { await Promise.all([listing.refetch(), quotaActions.refetch()]); };
+  const refresh = async (withQuota = true) => {
+    const target = untrack(request);
+    if (!target) return;
+    if (withQuota) void loadQuota(target.remote, true);
+    await loadListing(target, true);
+  };
 
   function newFolder() {
     const name = selection();
     const directory = path();
     setEdit({ label: 'Create folder', initial: directory ? directory + '/' : '', submit: async (target) => {
       await window.api.mkdir(name, target);
-      await refresh();
+      cache.invalidateDirectory(name, directory);
+      cache.invalidateDirectory(name, parentRemotePath(target));
+      await refresh(false);
     } });
   }
 
@@ -193,11 +264,14 @@ export function Browser(props: PageProps) {
       if (from === target) return;
       if (entry.isDir) {
         await window.api.moveDirectory(name, from, target);
+        cache.invalidatePrefix(name, from);
       } else {
         if (await window.api.stat(name, target)) throw new Error('The destination already exists.');
         await window.api.moveFile(name, from, name, target);
       }
-      await refresh();
+      cache.invalidateDirectory(name, parentRemotePath(from));
+      cache.invalidateDirectory(name, parentRemotePath(target));
+      await refresh(false);
     } });
   }
 
@@ -205,7 +279,10 @@ export function Browser(props: PageProps) {
     const name = selection();
     const target = entry.path;
     await (entry.isDir ? window.api.purge(name, target) : window.api.deleteFile(name, target));
-    await refresh();
+    if (entry.isDir) cache.invalidatePrefix(name, target);
+    cache.invalidateDirectory(name, parentRemotePath(target));
+    cache.invalidateQuota(name);
+    await refresh(true);
   }
 
   return (
@@ -227,10 +304,16 @@ export function Browser(props: PageProps) {
               <button type="button" class="button" onClick={newFolder}><FolderPlus size={15} /> New folder</button>
               <button type="button" class="button" disabled={!nativeTransfers() || action.pending()}
                 title={nativeTransfers() ? undefined : 'File uploads require the managed daemon.'} onClick={() => void action.run(async () => {
-                  const count = await untrack(() => window.api.uploadFiles(selection(), path()));
-                  if (count) await refresh();
+                  const name = untrack(selection);
+                  const dir = untrack(path);
+                  const count = await window.api.uploadFiles(name, dir);
+                  if (count) {
+                    cache.invalidateDirectory(name, dir);
+                    cache.invalidateQuota(name);
+                    await refresh(true);
+                  }
                 })}><Upload size={15} /> Upload files</button>
-              <button type="button" class="button" disabled={entries.loading || action.pending()} onClick={() => void action.run(refresh)}><RefreshCw size={15} /> Refresh</button>
+              <button type="button" class="button" disabled={listingLoading() || action.pending()} onClick={() => void action.run(() => refresh(true))}><RefreshCw size={15} /> Refresh</button>
             </div>
           </div>
           <nav class="breadcrumbs path" aria-label="Remote folder path">
@@ -291,14 +374,14 @@ export function Browser(props: PageProps) {
               </tbody>
             </table>
           </div>
-          <Show when={entries.loading}><p class="empty" role="status">Loading files…</p></Show>
+          <Show when={listingLoading() && !current()?.items.length}><p class="empty" role="status">Loading files…</p></Show>
           <Show when={current()?.error}>{(error) => <p class="banner error" role="alert">{error()}</p>}</Show>
-          <Show when={current() && !current()?.error && !entries.loading && !filtered().length}><Empty>{filter() ? 'No matching files.' : 'This folder is empty.'}</Empty></Show>
+          <Show when={current() && !current()?.error && !listingLoading() && !filtered().length}><Empty>{filter() ? 'No matching files.' : 'This folder is empty.'}</Empty></Show>
           <Feedback action={action} />
           <footer class="file-footer">
             <span>{filtered().length} {filtered().length === 1 ? 'item' : 'items'}</span>
             <span>{remote()?.isCrypt ? 'Encrypted' : 'Direct remote'}</span>
-            <Show when={currentQuota()?.value} fallback={<span class="secondary" title={currentQuota()?.error}>{quota.loading ? 'Loading quota…' : 'Storage quota unavailable'}</span>}>
+            <Show when={currentQuota()?.value} fallback={<span class="secondary" title={currentQuota()?.error}>{currentQuota()?.loading ? 'Loading quota…' : 'Storage quota unavailable'}</span>}>
               {(value) => <Quota value={value()} />}
             </Show>
           </footer>

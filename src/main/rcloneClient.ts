@@ -18,6 +18,7 @@ type NoParams = Record<string, never>;
 
 type RcResult = Record<string, unknown>;
 export interface RcFile { fs: string; remote: string }
+export interface RcListRequest extends RcFile { _config?: { UseServerModTime?: boolean } }
 export interface RcCopyFile { srcFs: string; srcRemote: string; dstFs: string; dstRemote: string }
 export interface RcMountOptions {
   fs: string;
@@ -60,7 +61,7 @@ interface RcMethods {
   'vfs/stats': [VfsTarget, RcResult];
   'vfs/refresh': [VfsPaths, RcResult];
   'vfs/forget': [VfsPaths, RcResult];
-  'operations/list': [RcFile, { list: RcItem[] | null }];
+  'operations/list': [RcListRequest, { list: RcItem[] | null }];
   'operations/about': [{ fs: string }, Partial<RemoteQuota>];
   'operations/stat': [RcFile, { item: RcItem | null }];
   'operations/mkdir': [RcFile, RcResult];
@@ -188,7 +189,9 @@ export class RcloneClient {
   }
 
   async list(remote: string, path: string): Promise<RemoteEntry[]> {
-    const { list } = await this.call('operations/list', { fs: remoteFs(remote), remote: path });
+    const { list } = await this.call('operations/list', {
+      fs: remoteFs(remote), remote: path, _config: { UseServerModTime: true },
+    });
     return (list ?? []).map(toRemoteEntry);
   }
 
