@@ -26,7 +26,7 @@ const TOGGLE_ICON_SIZE = 12;
 
 export function Sidebar(props: {
   page: Page; collapsed: boolean; daemon?: DaemonStatus; prereqs?: PrereqStatus; build?: BuildInfo; mounts: number; jobs: number;
-  navigate: (page: Page) => void; openAbout: () => void; toggle: () => void;
+  navigate: (page: Page) => void; openUpdates: () => void; toggle: () => void;
 }) {
   const count = (page: Page) => page === 'Mounts' ? props.mounts : page === 'Transfers' ? props.jobs : 0;
   const toggleLabel = () => `${props.collapsed ? 'Expand' : 'Collapse'} sidebar (${shortModifier}B)`;
@@ -55,7 +55,7 @@ export function Sidebar(props: {
         </>
       )}</For>
       <Show when={!props.collapsed}>
-        <button type="button" class="build-card" onClick={() => props.openAbout()}>
+        <button type="button" class="build-card" onClick={() => props.openUpdates()}>
           <span class="build-row">
             <span class="build-title">LudyRudy<span class="build-version">{props.build?.version ?? '—'}</span></span>
             <span class="build-sub">

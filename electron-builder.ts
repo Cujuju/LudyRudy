@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { Arch, type Configuration } from 'electron-builder';
 import { appVersion } from './appVersion.ts';
+import { linuxAppImageName } from './scripts/releaseShared.mts';
 import { APP_ID, APP_NAME } from './src/shared/app.ts';
 
 const rcloneResources = (platform: string) => [
@@ -29,10 +30,18 @@ const config: Configuration = {
     }
   },
   mac: {
+    artifactName: '${productName}-${version}-${arch}-mac.${ext}',
     extraResources: rcloneResources('darwin'),
-    target: [{ target: 'dmg', arch: ['arm64', 'x64'] }], icon: 'resources/icon-1024.png',
-    category: 'public.app-category.utilities', identity: '-', hardenedRuntime: false,
+    target: [
+      { target: 'dmg', arch: ['arm64', 'x64'] },
+      { target: 'zip', arch: ['arm64', 'x64'] },
+    ],
+    icon: 'resources/icon-1024.png',
+    category: 'public.app-category.utilities',
+    identity: '-',
+    hardenedRuntime: false,
   },
+  dmg: { artifactName: '${productName}-${version}-${arch}.${ext}' },
   win: {
     extraResources: rcloneResources('win32'),
     target: [{ target: 'nsis', arch: 'x64' }],
@@ -42,7 +51,24 @@ const config: Configuration = {
       { from: 'resources/tiles', to: 'tiles' },
     ],
   },
-  linux: { extraResources: rcloneResources('linux'), target: [{ target: 'AppImage', arch: 'x64' }], icon: 'resources/icon-1024.png', category: 'Utility' },
+  nsis: {
+    // No spaces: GitHub renames spaced uploads, and the update manifest names the file as built.
+    artifactName: '${productName}-Setup-${version}.${ext}',
+    oneClick: false,
+    perMachine: false,
+    allowToChangeInstallationDirectory: true,
+    createDesktopShortcut: true,
+    runAfterFinish: true,
+  },
+  linux: {
+    extraResources: rcloneResources('linux'),
+    target: [{ target: 'AppImage', arch: 'x64' }],
+    artifactName: linuxAppImageName('${version}'),
+    icon: 'resources/icon-1024.png',
+    category: 'Utility',
+    // Keep Chromium sandboxing enabled in the AppImage desktop entry.
+    executableArgs: [],
+  },
 };
 
 export default config;

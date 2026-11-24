@@ -26,7 +26,7 @@ function readOptional(file: string): Buffer | null {
 }
 
 let current: AppSettings | undefined;
-const listeners = new Set<(value: AppSettings) => void>();
+const listeners = new Set<(next: AppSettings, prev: AppSettings) => void>();
 
 export function getSettings(): AppSettings {
   if (current) return current;
@@ -41,14 +41,15 @@ export function getSettings(): AppSettings {
 }
 
 export function updateSettings(patch: Partial<AppSettings>): AppSettings {
-  const next = normalizeSettings({ ...getSettings(), ...patch });
+  const prev = getSettings();
+  const next = normalizeSettings({ ...prev, ...patch });
   writeFileAtomic(profileFile('settings.json'), JSON.stringify(next, null, 2));
   current = next;
-  for (const listener of listeners) listener(next);
+  for (const listener of listeners) listener(next, prev);
   return next;
 }
 
-export function onSettingsChange(listener: (settings: AppSettings) => void): void {
+export function onSettingsChange(listener: (next: AppSettings, prev: AppSettings) => void): void {
   listeners.add(listener);
 }
 

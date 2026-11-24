@@ -1,12 +1,21 @@
 import { DEFAULT_NOTICE_CONFIG, normalizeNoticeConfig, type NoticeConfig } from '@cujuju/electron-notices';
 import { SYSTEM_THEME, THEME_CHOICES } from './themes';
 import { validateOptionMap } from './mountOptions';
+import { MINUTES_PER_DAY, MINUTES_PER_HOUR } from './timeFormat';
+import { UPDATE_CHANNELS, type UpdateChannel } from './updateFeed';
 import { VFS_CACHE_MODES, type MountProfile, type SyncJob } from './types';
+
+/** When a downloaded update installs. */
+export const UPDATE_INSTALL_MODES = ['off', 'now', 'scheduled', 'restart'] as const;
+export type UpdateInstallMode = (typeof UPDATE_INSTALL_MODES)[number];
+/** Quiet overnight install time, in local minutes after midnight. */
+export const DEFAULT_UPDATE_INSTALL_MINUTE = 3 * MINUTES_PER_HOUR;
 
 export interface AppSettings {
   general: { theme: string; closeToTray: boolean; minimizeToTray: boolean; sidebarCollapsed: boolean; launchAtLogin: boolean; startMinimized: boolean };
   daemon: { binaryPath: string; configPath: string; endpoint: string; autoStart: boolean; defaultVfsCacheMode: MountProfile['vfsCacheMode']; defaultCacheDir: string; bwLimit: string };
   notifications: NoticeConfig & { daemonErrors: boolean };
+  updates: { autoCheck: boolean; autoInstall: UpdateInstallMode; installMinute: number; channel: UpdateChannel };
   mounts: MountProfile[];
   jobs: SyncJob[];
 }
@@ -15,6 +24,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   general: { theme: SYSTEM_THEME, closeToTray: false, minimizeToTray: false, sidebarCollapsed: false, launchAtLogin: false, startMinimized: false },
   daemon: { binaryPath: '', configPath: '', endpoint: '', autoStart: true, defaultVfsCacheMode: 'off', defaultCacheDir: '', bwLimit: 'off' },
   notifications: { ...DEFAULT_NOTICE_CONFIG, daemonErrors: true },
+  updates: { autoCheck: true, autoInstall: 'off', installMinute: DEFAULT_UPDATE_INSTALL_MINUTE, channel: 'stable' },
   mounts: [], jobs: [],
 };
 
@@ -22,6 +32,8 @@ const record = (raw: unknown): Record<string, unknown> =>
   raw && typeof raw === 'object' && !Array.isArray(raw) ? raw as Record<string, unknown> : {};
 const string = (raw: unknown, fallback = '') => typeof raw === 'string' ? raw : fallback;
 const bool = (raw: unknown, fallback = false) => typeof raw === 'boolean' ? raw : fallback;
+const int = (raw: unknown, fallback: number, min: number, max: number) =>
+  typeof raw === 'number' && Number.isFinite(raw) ? Math.min(max, Math.max(min, Math.round(raw))) : fallback;
 const strings = (raw: unknown): string[] => Array.isArray(raw) ? raw.filter((item) => typeof item === 'string') : [];
 const items = (raw: unknown) => Array.isArray(raw) ? raw.map(record) : [];
 
@@ -51,6 +63,7 @@ export function normalizeSettings(raw: unknown): AppSettings {
   const general = record(value.general);
   const daemon = record(value.daemon);
   const notifications = record(value.notifications);
+  const updates = record(value.updates);
   return {
     general: {
       theme: THEME_CHOICES.find((theme) => theme === general.theme) ?? DEFAULT_SETTINGS.general.theme,
@@ -65,6 +78,12 @@ export function normalizeSettings(raw: unknown): AppSettings {
       defaultCacheDir: string(daemon.defaultCacheDir), bwLimit: string(daemon.bwLimit, DEFAULT_SETTINGS.daemon.bwLimit),
     },
     notifications: { ...normalizeNoticeConfig(notifications), daemonErrors: bool(notifications.daemonErrors, true) },
+    updates: {
+      autoCheck: bool(updates.autoCheck, DEFAULT_SETTINGS.updates.autoCheck),
+      autoInstall: UPDATE_INSTALL_MODES.find((mode) => mode === updates.autoInstall) ?? DEFAULT_SETTINGS.updates.autoInstall,
+      installMinute: int(updates.installMinute, DEFAULT_SETTINGS.updates.installMinute, 0, MINUTES_PER_DAY - 1),
+      channel: UPDATE_CHANNELS.find((channel) => channel === updates.channel) ?? DEFAULT_SETTINGS.updates.channel,
+    },
     mounts: normalizeMounts(value.mounts),
     jobs: normalizeJobs(value.jobs),
   };

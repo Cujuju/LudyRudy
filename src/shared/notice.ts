@@ -11,10 +11,12 @@ export const NOTICE_KINDS = {
   jobFailed: { tone: 'error', tag: 'JOB' },
   mountReady: { tone: 'ok', tag: 'MOUNT' },
   transferDone: { tone: 'ok', tag: 'TRANSFER' },
+  updateFound: { tone: 'info', tag: 'UPDATE' },
 } as const;
 export type NoticeKind = keyof typeof NOTICE_KINDS;
+export type NoticeTarget = 'window' | 'updates';
 
-export function appNotice(kind: NoticeKind, input: Pick<NoticeInput, 'title' | 'body'>): NoticeInput {
+export function appNotice(kind: NoticeKind, input: Pick<NoticeInput, 'title' | 'body' | 'short'> & { target?: NoticeTarget }): NoticeInput {
   return { ...input, ...NOTICE_KINDS[kind], icon: kind };
 }
 

@@ -13,13 +13,11 @@ import { managedPaths, type RcloneSupervisor } from './rcloneSupervisor';
 import type { RcloneAuth } from './rcloneAuth';
 import { generateSecret, type openRemotes } from './remoteService';
 import { getSettings, readConfigPassword, updateSettings } from './settingsStore';
+import { updates } from './updater';
 import { isQuitting, mainWindow } from './window';
 
-declare const __APP_VERSION__: string;
-declare const __APP_BUILD__: string;
-
 interface Services {
-  sendNotice: ReturnType<typeof startNotices>;
+  sendNotice: ReturnType<typeof startNotices>['notify'];
   daemon: RcloneSupervisor;
   mounts: ReturnType<typeof openMountManager>;
   jobs: ReturnType<typeof openJobManager>;
@@ -56,6 +54,12 @@ export function registerIpc({ daemon, mounts, jobs, auth, remotes, current, refr
   invoke('refresh', async () => { await daemon.refreshLocal(); return refresh(); });
   invoke('updateGeneral', (patch) => Promise.resolve(updateSettings({ general: { ...getSettings().general, ...patch } })));
   invoke('updateNotifications', (patch) => Promise.resolve(updateSettings({ notifications: { ...getSettings().notifications, ...patch } })));
+  invoke('updateUpdates', (patch) => Promise.resolve(updateSettings({ updates: { ...getSettings().updates, ...patch } })));
+  invoke('updateStatus', () => Promise.resolve(updates.status()));
+  invoke('checkForUpdates', () => updates.check());
+  invoke('downloadUpdate', () => updates.download());
+  // Quitting stops the daemon (before-quit) before the update replaces its files.
+  invoke('installUpdate', () => { updates.quitAndInstall(); return Promise.resolve(); });
   invoke('noticePreview', () => {
     sendNotice(appNotice('preview', { title: 'Test notification', body: 'Notifications are ready for drive and transfer updates.' }));
     return Promise.resolve();

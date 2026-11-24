@@ -1,0 +1,130 @@
+import { execFileSync } from 'node:child_process';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import os from 'node:os';
+import path from 'node:path';
+import { Arch, archFromString, LinuxPackager, MacPackager, Packager, WinPackager } from 'electron-builder';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import config from '../electron-builder.ts';
+import { assertReleaseSiblings, ensureNightlyRelease, installerFiles, nightlyTarget, RELEASE_ARCHS, releaseDetails, updateSource, type ReleaseView } from './releaseShared.mts';
+
+vi.mock('node:child_process', { spy: true });
+const GIT_TEST_TIMEOUT_MS = 30_000;
+afterEach(() => { vi.mocked(execFileSync).mockReset(); vi.restoreAllMocks(); });
+const complete: ReleaseView = { tagName: 'v0.1.0', isPrerelease: true,
+  assets: Object.keys(RELEASE_ARCHS).map((p) => ({ name: `update-${p}.json` })) };
+
+describe('nightly selection', () => {
+  it('skips unchanged main and builds a new main commit', () => {
+    expect(nightlyTarget('old', 'old', complete, false)).toBeNull();
+    expect(nightlyTarget('new', 'old', complete, false)).toEqual({ sha: 'new', platforms: ['win32', 'darwin', 'linux'] });
+  });
+  it('retries missing platforms while main matches the prerelease source', () => {
+    expect(nightlyTarget('old', 'old', { ...complete, assets: [{ name: 'update-darwin.json' }] }, false)).toEqual({ sha: 'old', platforms: ['win32', 'linux'] });
+  });
+  it.each([{ assets: [] }, { assets: [{ name: 'update-darwin.json' }] }])('builds advanced main for every platform despite an incomplete prerelease ($assets)', ({ assets }) => {
+    expect(nightlyTarget('new', 'old', { ...complete, assets }, false)).toEqual({ sha: 'new', platforms: ['win32', 'darwin', 'linux'] });
+  });
+  it('starts from main without a release and allows manual unchanged builds', () => {
+    expect(nightlyTarget('main', null, null, false)?.sha).toBe('main');
+    expect(nightlyTarget('old', 'old', complete, true)?.sha).toBe('old');
+    expect(nightlyTarget('new', 'old', { ...complete, assets: [] }, true)?.sha).toBe('new');
+  });
+  it('does not complete a stable release with nightly uploads', () => {
+    expect(nightlyTarget('new', 'old', { ...complete, isPrerelease: false, assets: [] }, false)?.sha).toBe('new');
+  });
+});
+
+it('creates a prerelease with the CLI title, notes and exact source target', () => {
+  const run = vi.mocked(execFileSync).mockImplementation(((_exe: unknown, args: string[]) => {
+    if (args[0] === 'api') throw Object.assign(new Error('missing'), { stderr: Buffer.from('gh: Not Found (HTTP 404)') });
+    return '';
+  }) as typeof execFileSync);
+  ensureNightlyRelease({ sha: 'abc', version: '0.1.0', tag: 'v0.1.0', title: 'LudyRudy 0.1.0', notes: 'LudyRudy 0.1.0 nightly' });
+  expect(run).toHaveBeenLastCalledWith('gh', ['release', 'create', 'v0.1.0', '--prerelease', '--title', 'LudyRudy 0.1.0', '--notes', 'LudyRudy 0.1.0 nightly', '--target', 'abc', '--repo', 'Cujuju/LudyRudy'], expect.anything());
+});
+
+it('never recreates an existing nightly or changes a stable release', () => {
+  const run = vi.mocked(execFileSync).mockImplementation(((exe: string) => exe === 'git' ? 'abc' : JSON.stringify({ tag_name: 'v0.1.0', prerelease: true, assets: [] })) as typeof execFileSync);
+  const details = { sha: 'abc', version: '0.1.0', tag: 'v0.1.0', title: 'LudyRudy 0.1.0', notes: 'LudyRudy 0.1.0 nightly' };
+  expect(ensureNightlyRelease(details)?.isPrerelease).toBe(true);
+  expect(run).toHaveBeenCalledTimes(2);
+  run.mockReturnValue(JSON.stringify({ tag_name: 'v0.1.0', prerelease: false, assets: [] }));
+  expect(() => ensureNightlyRelease(details)).toThrow('already stable');
+});
+
+it('does not turn an authentication failure into a release creation', () => {
+  const run = vi.mocked(execFileSync).mockImplementation(() => { throw new Error('HTTP 401'); });
+  expect(() => ensureNightlyRelease({ sha: 'abc', version: '0', tag: 'v0', title: 'LudyRudy 0', notes: 'nightly' })).toThrow('HTTP 401');
+  expect(run).toHaveBeenCalledTimes(1);
+});
+
+it('names all full installers including both Mac zip archives and the Linux AppImage', () => {
+  expect(installerFiles('win32', '0.1.0')).toEqual(['LudyRudy-Setup-0.1.0.exe']);
+  expect(installerFiles('linux', '0.1.0')).toEqual(['LudyRudy-0.1.0-x86_64.AppImage']);
+  expect(installerFiles('darwin', '0.1.0')).toEqual(['LudyRudy-0.1.0-arm64.dmg', 'LudyRudy-0.1.0-arm64-mac.zip', 'LudyRudy-0.1.0-x64.dmg', 'LudyRudy-0.1.0-x64-mac.zip']);
+});
+
+it('matches release sources and installers to electron-builder artifact expansion', async () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), 'ludyrudy-artifacts-'));
+  const version = '0.1.0';
+  writeFileSync(path.join(root, 'package.json'), JSON.stringify({ name: 'ludyrudy', version, description: 'LudyRudy' }));
+  try {
+    const packager = new Packager({ projectDir: root, config: { ...config, extraMetadata: { version } } });
+    await packager.validateConfig();
+    const linux = new LinuxPackager(packager);
+    const appImage = linux.expandArtifactNamePattern(config.linux, 'AppImage', Arch.x64);
+    expect(appImage).toBe('LudyRudy-0.1.0-x86_64.AppImage');
+    expect(linux.expandArtifactNamePattern({ artifactName: '${productName}-${version}-${arch}.${ext}' }, 'AppImage', Arch.x64)).toBe(appImage);
+    expect(updateSource('linux', 'x64', version)).toBe(appImage);
+    expect(installerFiles('linux', version)).toEqual([appImage]);
+    const win = new WinPackager(packager);
+    const nsis = win.expandArtifactNamePattern(config.nsis, 'exe', Arch.x64);
+    expect(updateSource('win32', 'x64', version)).toBe(nsis);
+    expect(installerFiles('win32', version)).toEqual([nsis]);
+    const mac = new MacPackager(packager);
+    expect(installerFiles('darwin', version)).toEqual(RELEASE_ARCHS.darwin.flatMap((arch) => [
+      mac.expandArtifactNamePattern(config.dmg, 'dmg', archFromString(arch)),
+      mac.expandArtifactNamePattern(config.mac, 'zip', archFromString(arch)),
+    ]));
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+it('keeps Chromium sandboxing in the AppImage desktop entry', async () => {
+  const builderRequire = createRequire(createRequire(import.meta.url).resolve('electron-builder'));
+  const { default: AppImageTarget } = builderRequire('app-builder-lib/out/targets/appimage/AppImageTarget') as {
+    default: new (...args: unknown[]) => { desktopEntry: { value: Promise<string> } };
+  };
+  const packager = { platformSpecificBuildOptions: config.linux, config, appInfo: { buildVersion: '0.1.0' } };
+  const helper = { computeDesktopEntry: async (_options: unknown, exec: string) => exec };
+  expect(await new AppImageTarget(null, packager, helper, os.tmpdir()).desktopEntry.value).toBe('AppRun %U');
+});
+
+it('restores missing origin/HEAD for clean CI siblings and still rejects dirty or stale siblings', () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), 'ludyrudy-release-'));
+  const env = { ...process.env, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: path.join(root, 'gitconfig') };
+  writeFileSync(env.GIT_CONFIG_GLOBAL, '');
+  const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', ...args], { cwd, env, encoding: 'utf8', stdio: 'pipe' }).trim();
+  const desktop = path.join(root, 'ludyrudy');
+  mkdirSync(desktop);
+  try {
+    const remote = path.join(root, 'solidjs-toolkit-remote');
+    mkdirSync(remote);
+    git(remote, 'init', '-q', '-b', 'main');
+    writeFileSync(path.join(remote, 'tracked'), 'initial');
+    git(remote, 'add', 'tracked');
+    git(remote, 'commit', '-qm', 'feat: initial');
+    git(root, 'clone', '-q', remote, 'solidjs-toolkit');
+    git(path.join(root, 'solidjs-toolkit'), 'symbolic-ref', '--delete', 'refs/remotes/origin/HEAD');
+    assertReleaseSiblings(desktop);
+    const toolkit = path.join(root, 'solidjs-toolkit');
+    const details = releaseDetails('HEAD', toolkit);
+    expect(details).toMatchObject({ version: '0.1.0', title: 'LudyRudy 0.1.0', notes: 'LudyRudy 0.1.0 nightly' });
+    expect(git(toolkit, 'rev-parse', 'origin/HEAD')).toBe(details.sha);
+    writeFileSync(path.join(toolkit, 'tracked'), 'dirty');
+    expect(() => assertReleaseSiblings(desktop)).toThrow('not clean');
+    git(toolkit, 'checkout', '--', 'tracked');
+    git(toolkit, 'commit', '-qm', 'fix: unpushed', '--allow-empty');
+    expect(() => assertReleaseSiblings(desktop)).toThrow('not clean');
+  } finally { rmSync(root, { recursive: true, force: true }); }
+}, GIT_TEST_TIMEOUT_MS);

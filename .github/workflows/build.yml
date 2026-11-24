@@ -1,0 +1,148 @@
+name: releases
+
+on:
+  schedule:
+    - cron: '0 */3 * * *'
+  release:
+    types: [released]
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Release files to publish
+        type: choice
+        options: [nightly, installers]
+        default: nightly
+      tag:
+        description: Stable tag for installers (empty selects latest stable)
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ludyrudy-releases
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    if: github.event_name != 'release' || !github.event.release.prerelease
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      run: ${{ steps.plan.outputs.run }}
+      sha: ${{ steps.plan.outputs.sha }}
+      tag: ${{ steps.plan.outputs.tag }}
+      mode: ${{ steps.plan.outputs.mode }}
+      matrix: ${{ steps.plan.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: package.json
+          package-manager-cache: false
+      - name: Select source and prepare the release
+        id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_MODE: ${{ github.event_name == 'release' && 'installers' || inputs.mode || 'nightly' }}
+          RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+        run: node scripts/releasePlan.mts
+
+  build:
+    needs: plan
+    if: needs.plan.outputs.run == 'true'
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write
+    defaults:
+      run:
+        working-directory: desktop
+    env:
+      RELEASE_TAG: ${{ needs.plan.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.plan.outputs.sha }}
+          path: desktop
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/checkout@v7
+        with:
+          repository: Cujuju/solidjs-toolkit
+          path: solidjs-toolkit
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: pnpm/action-setup@v6
+        with:
+          package_json_file: desktop/package.json
+          cache: true
+          cache_dependency_path: desktop/pnpm-lock.yaml
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: desktop/package.json
+          package-manager-cache: false
+      - name: Install toolkit dependencies
+        working-directory: solidjs-toolkit
+        run: pnpm install --frozen-lockfile
+      - name: Build toolkit packages
+        working-directory: solidjs-toolkit
+        run: pnpm -r run build
+      - run: pnpm install --frozen-lockfile
+      # Electron 45 downloads its binary on first require; tests that launch it in parallel would race the extraction.
+      - name: Download Electron
+        run: node -e "require('electron')"
+      - run: node scripts/build-linked.mjs
+      - name: Fetch rclone binaries
+        shell: bash
+        env:
+          RCLONE_TARGETS: ${{ matrix.rcloneTargets }}
+        run: |
+          read -ra targets <<< "$RCLONE_TARGETS"
+          for target in "${targets[@]}"; do
+            pnpm rclone:fetch "$target"
+          done
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test
+      - name: Smoke
+        if: matrix.platform == 'darwin'
+        run: pnpm smoke
+      - name: Smoke test on Linux
+        if: matrix.platform == 'linux'
+        run: xvfb-run --auto-servernum pnpm smoke
+      - name: Package
+        run: pnpm package
+      - name: Stage update signing key
+        if: needs.plan.outputs.mode == 'nightly' && !matrix.published
+        env:
+          UPDATE_KEY_CONTENTS: ${{ secrets.LUDYRUDY_UPDATE_KEY }}
+        run: >-
+          node --input-type=module -e "import fs from 'node:fs'; import path from 'node:path';
+          const key = path.join(process.env.RUNNER_TEMP, 'ludyrudy-update-key');
+          if (!process.env.UPDATE_KEY_CONTENTS) throw new Error('LUDYRUDY_UPDATE_KEY is required');
+          fs.writeFileSync(key, process.env.UPDATE_KEY_CONTENTS, { mode: 0o600 });
+          fs.appendFileSync(process.env.GITHUB_ENV, 'LUDYRUDY_UPDATE_KEY=' + key + '\n');"
+      - name: Publish signed nightly updates
+        if: needs.plan.outputs.mode == 'nightly' && !matrix.published
+        env:
+          GH_TOKEN: ${{ github.token }}
+          LUDYRUDY_UPDATE_ONLY: '1'
+        run: pnpm release nightly
+      - name: Attach stable installers
+        if: needs.plan.outputs.mode == 'installers'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/releaseInstallers.mts
+      - name: Remove update signing key
+        if: always()
+        run: >-
+          node --input-type=module -e "import fs from 'node:fs'; import path from 'node:path';
+          fs.rmSync(path.join(process.env.RUNNER_TEMP, 'ludyrudy-update-key'), { force: true });"
