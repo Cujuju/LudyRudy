@@ -10,6 +10,7 @@
   "type": "module",
   "scripts": {
     "dev": "electron-vite dev",
+    "dev:shortcut": "node scripts/dev-shortcut.mjs",
     "build": "electron-vite build",
     "start": "electron-vite preview",
     "typecheck": "node scripts/build-linked.mjs && tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
