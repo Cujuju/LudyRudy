@@ -263,16 +263,18 @@ export function Browser(props: PageProps) {
     const from = entry.path;
     setEdit({ label: 'Rename or move', initial: from, submit: async (target) => {
       if (from === target) return;
-      if (entry.isDir) {
-        await window.api.moveDirectory(name, from, target);
-        cache.invalidatePrefix(name, from);
-      } else {
-        if (await window.api.stat(name, target)) throw new Error('The destination already exists.');
-        await window.api.moveFile(name, from, name, target);
+      try {
+        if (entry.isDir) await window.api.moveDirectory(name, from, target);
+        else await window.api.moveFile(name, from, name, target);
+      } finally {
+        if (entry.isDir) {
+          cache.invalidatePrefix(name, from);
+          cache.invalidatePrefix(name, target);
+        }
+        cache.invalidateDirectory(name, parentRemotePath(from));
+        cache.invalidateDirectory(name, parentRemotePath(target));
+        await refresh(false);
       }
-      cache.invalidateDirectory(name, parentRemotePath(from));
-      cache.invalidateDirectory(name, parentRemotePath(target));
-      await refresh(false);
     } });
   }
 
@@ -307,12 +309,17 @@ export function Browser(props: PageProps) {
                 title={nativeTransfers() ? undefined : 'File uploads require the managed daemon.'} onClick={() => void action.run(async () => {
                   const name = untrack(selection);
                   const dir = untrack(path);
-                  const count = await window.api.uploadFiles(name, dir);
-                  if (count) {
+                  const { uploaded, skipped, failure } = await window.api.uploadFiles(name, dir);
+                  if (uploaded.length || failure) {
                     cache.invalidateDirectory(name, dir);
                     cache.invalidateQuota(name);
                     await refresh(true);
                   }
+                  if (failure) throw new Error([
+                    `Stopped at ${failure.file}. ${failure.message}`,
+                    uploaded.length && `Uploaded ${uploaded.join(', ')}.`,
+                    skipped?.length && `Skipped ${skipped.join(', ')}.`,
+                  ].filter(Boolean).join(' '));
                 })}><Upload size={15} /> Upload files</button>
               <button type="button" class="button" disabled={listingLoading() || action.pending()} onClick={() => void action.run(() => refresh(true))}><RefreshCw size={15} /> Refresh</button>
             </div>

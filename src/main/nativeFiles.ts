@@ -1,8 +1,9 @@
 import { dialog, shell } from 'electron';
 import { basename, dirname, posix, win32 } from 'node:path';
 import { mkdir } from 'node:fs/promises';
-import { managedPaths, type RcloneSupervisor } from './rcloneSupervisor';
-import { remoteFs } from './rcloneClient';
+import type { UploadResult } from '@shared/ipc';
+import { errorMessage, managedPaths, type RcloneSupervisor } from './rcloneSupervisor';
+import { NO_CLOBBER, remoteFs } from './rcloneClient';
 import { profileFile } from './paths';
 import { mainWindow } from './window';
 
@@ -48,19 +49,34 @@ export function nativeFiles(daemon: RcloneSupervisor) {
       });
       return canceled ? null : filePaths[0] ?? null;
     },
-    async uploadFiles(remote: string, directory: string): Promise<number> {
+    async uploadFiles(remote: string, directory: string): Promise<UploadResult> {
       const path = remotePath(directory, true);
       const rc = localTransfer(remote);
       const { filePaths, canceled } = await openDialog({ properties: ['openFile', 'multiSelections'] });
-      if (canceled) return 0;
+      const uploaded: string[] = [];
+      if (canceled) return { uploaded };
       if (rc !== localTransfer(remote)) throw new Error('The rclone daemon changed while choosing files.');
-      for (const file of filePaths) {
-        if (rc !== localTransfer(remote)) throw new Error('The rclone daemon changed during upload.');
-        await rc.call('operations/copyfile', {
-          srcFs: dirname(file), srcRemote: basename(file), dstFs: remoteFs(remote), dstRemote: posix.join(path, basename(file)),
-        });
+      const names = filePaths.map((file) => basename(file));
+      if (new Set(names).size !== names.length) throw new Error('Choose files with distinct names.');
+      for (const name of names) {
+        await rc.requireMissingDestination(remote, posix.join(path, name));
       }
-      return filePaths.length;
+      for (const [index, file] of filePaths.entries()) {
+        const name = basename(file);
+        try {
+          if (rc !== localTransfer(remote)) throw new Error('The rclone daemon changed during upload.');
+          await rc.call('operations/copyfile', {
+            srcFs: dirname(file), srcRemote: name, dstFs: remoteFs(remote), dstRemote: posix.join(path, name), _config: NO_CLOBBER,
+          });
+          uploaded.push(name);
+        } catch (error) {
+          return {
+            uploaded, skipped: names.slice(index + 1),
+            failure: { file: name, message: errorMessage(error) },
+          };
+        }
+      }
+      return { uploaded };
     },
     async downloadFile(remote: string, source: string, suggestedName?: string): Promise<boolean> {
       const path = remotePath(source);

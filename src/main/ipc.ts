@@ -8,7 +8,7 @@ import { setConfigPassword } from './configPassword';
 import type { openJobManager } from './jobManager';
 import type { openMountManager } from './mountManager';
 import { nativeFiles, remotePath } from './nativeFiles';
-import { describeFs, RcloneClient, remoteFs } from './rcloneClient';
+import { describeFs, NO_CLOBBER, RcloneClient, remoteFs } from './rcloneClient';
 import { managedPaths, type RcloneSupervisor } from './rcloneSupervisor';
 import type { RcloneAuth } from './rcloneAuth';
 import { generateSecret, type openRemotes } from './remoteService';
@@ -148,7 +148,19 @@ export function registerIpc({ daemon, mounts, jobs, auth, remotes, current, refr
     invoke(method, async (src, srcPath, dst, dstPath) => {
       const rc = daemon.forRemote(src);
       daemon.forRemote(dst);
-      await rc.call(command, { srcFs: remoteFs(src), srcRemote: remotePath(srcPath), dstFs: remoteFs(dst), dstRemote: remotePath(dstPath) });
+      const from = remotePath(srcPath);
+      const to = remotePath(dstPath);
+      if (method === 'moveFile') {
+        if (src === dst && from === to) return;
+        await rc.requireMissingDestination(dst, to);
+        if (daemon.forRemote(src) !== rc || daemon.forRemote(dst) !== rc) {
+          throw new Error('The rclone daemon changed during move setup.');
+        }
+      }
+      await rc.call(command, {
+        srcFs: remoteFs(src), srcRemote: from, dstFs: remoteFs(dst), dstRemote: to,
+        ...(method === 'moveFile' ? { _config: NO_CLOBBER } : {}),
+      });
     });
   }
   invoke('moveDirectory', async (remote, source, destination) => {
@@ -157,8 +169,15 @@ export function registerIpc({ daemon, mounts, jobs, auth, remotes, current, refr
     const to = remotePath(destination);
     if (from === to) return;
     if (to.startsWith(from + '/') || from.startsWith(to + '/')) throw new Error('Choose a destination outside the source tree.');
-    if (await rc.stat(remote, to)) throw new Error('The destination already exists.');
-    await rc.call('sync/move', { srcFs: remoteFs(remote, from), dstFs: remoteFs(remote, to), createEmptySrcDirs: true, deleteEmptySrcDirs: true });
+    await rc.requireMissingDestination(remote, to);
+    if (daemon.forRemote(remote) !== rc) throw new Error('The rclone daemon changed during move setup.');
+    await rc.call('sync/move', {
+      srcFs: remoteFs(remote, from), dstFs: remoteFs(remote, to),
+      createEmptySrcDirs: true, deleteEmptySrcDirs: true, _config: NO_CLOBBER,
+    }).catch((error: unknown) => {
+      const message = error instanceof Error ? error.message : 'The move failed.';
+      throw new Error(`${message} Some files may have moved. Check both folders before retrying.`);
+    });
   });
   const native = nativeFiles(daemon);
   for (const method of ['pickDirectory', 'pickRcloneBinary', 'uploadFiles', 'downloadFile', 'openExternal', 'openPath'] as const) {

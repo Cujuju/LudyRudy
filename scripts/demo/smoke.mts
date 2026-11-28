@@ -52,6 +52,10 @@ export async function smoke(): Promise<string[]> {
       await api.testRemote('smoke-files');
       await api.mkdir('smoke-files', 'folder');
       await api.copyFile('gdrive', 'schedule.pdf', 'smoke-files', 'folder/copy.pdf');
+      await api.copyFile('gdrive', 'schedule.pdf', 'smoke-files', 'folder/occupied.pdf');
+      const collidingMove = await api.moveFile('smoke-files', 'folder/copy.pdf', 'smoke-files', 'folder/occupied.pdf')
+        .then(() => false, (error) => error.message.includes('destination already exists'));
+      if (!collidingMove || !(await api.stat('smoke-files', 'folder/copy.pdf'))) return false;
       await api.moveFile('smoke-files', 'folder/copy.pdf', 'smoke-files', 'folder/moved.pdf');
       if (!(await api.stat('smoke-files', 'folder/moved.pdf')) || (await api.stat('smoke-files', 'folder/copy.pdf'))) return false;
       await api.deleteFile('smoke-files', 'folder/moved.pdf');
