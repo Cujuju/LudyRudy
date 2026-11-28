@@ -2,7 +2,7 @@
 
 Electron + SolidJS desktop manager for rclone. The renderer accesses the main process through the typed preload API. Keep daemon requests and secrets in the main process.
 
-Use a sibling `solidjs-toolkit` checkout for linked packages. The [application checks workflow](.github/workflows/app-checks.yml) pins a compatible revision and the CI toolchain. Run `pnpm install --frozen-lockfile` in both checkouts. Typecheck and the app build resolve the toolkit source via `cujuju-source`, so the toolkit checkout needs no build step.
+Use a sibling `solidjs-toolkit` checkout for linked packages. The [application checks workflow](.github/workflows/app-checks.yml) pins a compatible revision and the CI toolchain. Run `pnpm install --frozen-lockfile` in both checkouts. Typecheck, tests, and the app build resolve the toolkit source via `cujuju-source`, so the toolkit checkout needs no build step.
 
 Run `pnpm lint`, `pnpm typecheck`, `pnpm test`, and `env -u ELECTRON_RUN_AS_NODE pnpm smoke` before handoff. Smoke uses a disposable profile and a fake rclone daemon. Fetch the target's rclone release with `pnpm rclone:fetch [target|all]` before packaging. The fetch script uses `unzip` on macOS/Linux and the system `tar.exe` on Windows.
 

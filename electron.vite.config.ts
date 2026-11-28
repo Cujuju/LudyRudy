@@ -18,15 +18,15 @@ const bundledLicenses = (bundle: string) => license({
 export default defineConfig(({ command }) => {
   const define = { ...build, __DEV_BUILD__: JSON.stringify(command === 'serve') };
   const sourceCondition = 'cujuju-source';
-  const nativeResolve = {
+  const nativeResolve = (conditions: readonly string[]) => ({
     resolve: { alias: shared },
-    environments: { ssr: { resolve: { conditions: [sourceCondition, ...defaultServerConditions] } } },
-  };
+    environments: { ssr: { resolve: { conditions: [sourceCondition, ...conditions] } } },
+  });
   const externalizeDeps = { exclude: ['@cujuju/electron-notices'] };
   return {
-    main: { ...nativeResolve, plugins: [bundledLicenses('main')], define, build: { externalizeDeps } },
+    main: { ...nativeResolve(defaultServerConditions), plugins: [bundledLicenses('main')], define, build: { externalizeDeps } },
     preload: {
-      ...nativeResolve, plugins: [bundledLicenses('preload')], define,
+      ...nativeResolve(defaultClientConditions), plugins: [bundledLicenses('preload')], define,
       build: { externalizeDeps, rollupOptions: { output: { format: 'cjs', entryFileNames: '[name].cjs' } } },
     },
     renderer: {
