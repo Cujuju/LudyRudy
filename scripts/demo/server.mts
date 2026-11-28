@@ -13,7 +13,7 @@ const REMOTES = {
   'gdrive-vault': { type: 'crypt', remote: 'gdrive:vault', filename_encryption: 'standard', directory_name_encryption: 'true' },
   'b2-backups': { type: 'b2' },
   's3-media': { type: 's3', provider: 'AWS', region: 'us-west-2' },
-  'nas-sftp': { type: 'sftp', host: 'nas.example.test' },
+  'nas-sftp': { type: 'sftp', host: 'nas.example.test', port: '2222', key_use_agent: 'true' },
 };
 
 function item(path: string, type?: string, size = 0): RcItem {
@@ -42,7 +42,8 @@ const PROVIDERS = [
       { Value: 'off', Help: 'Keep filenames visible' },
     ] }, { Name: 'directory_name_encryption', Default: true, Type: 'bool' },
   ] : Name === 'sftp' ? [
-    { Name: 'host', Required: true }, { Name: 'user' }, { Name: 'pass', IsPassword: true },
+    { Name: 'host', Required: true, Sensitive: true }, { Name: 'user', Sensitive: true }, { Name: 'pass', IsPassword: true },
+    { Name: 'key_use_agent', Default: false, Type: 'bool' },
     { Name: 'port', Default: 22, Advanced: true }, { Name: 'key_file', Advanced: true },
   ] : ['drive', 'onedrive', 'dropbox', 'box', 'pcloud'].includes(Name ?? '') ? [{ Name: 'token' }] : [],
 }));
@@ -187,6 +188,7 @@ export async function startDemoRclone() {
     },
     '/config/listremotes': () => ({ remotes: Object.keys(remotes) }),
     '/config/dump': () => remotes,
+    '/config/get': ({ name }) => remotes[asString(name)] ?? {},
     '/config/paths': () => ({ config: '/demo/rclone.conf' }),
     '/config/providers': () => ({ providers: PROVIDERS }),
     '/config/create': ({ name: value, type, parameters }) => {

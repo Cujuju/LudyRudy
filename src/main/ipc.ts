@@ -96,7 +96,7 @@ export function registerIpc({ daemon, mounts, jobs, auth, remotes, current, refr
   });
   invoke('completedTransfers', () => daemon.client().transferred());
   invoke('resetStats', mutate(async () => { await daemon.client().call('core/stats-reset'); }));
-  invoke('listProviders', remotes.listProviders);
+  invoke('remoteEditor', remotes.remoteEditor);
   invoke('createRemote', mutate(remotes.createRemote, daemon.invalidateRemoteInventory));
   invoke('updateRemote', mutate(remotes.updateRemote, daemon.invalidateRemoteInventory));
   invoke('deleteRemote', mutate(remotes.deleteRemote, daemon.invalidateRemoteInventory));

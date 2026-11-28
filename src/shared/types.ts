@@ -40,7 +40,24 @@ export interface ProviderInfo {
   isOAuth: boolean;
   popular: boolean;
   isCrypt: boolean;
-  options: Record<string, unknown>[];
+  options: ProviderOptionSpec[];
+}
+
+export interface ProviderOptionSpec {
+  name: string;
+  help?: string;
+  input: 'text' | 'boolean' | 'password';
+  sensitive?: boolean;
+  required?: boolean;
+  advanced?: boolean;
+  provider?: string;
+  defaultValue?: RemoteParameters[string];
+  choices?: { value: string; help: string; provider?: string }[];
+}
+
+export interface RemoteEditorData {
+  providers: ProviderInfo[];
+  values: RemoteParameters;
 }
 
 export const VFS_CACHE_MODES = ['off', 'minimal', 'writes', 'full'] as const;
