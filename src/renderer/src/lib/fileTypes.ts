@@ -128,9 +128,8 @@ export function nextSort(current: SortState, key: SortKey): SortState {
   return { key, direction };
 }
 
-function compareNames(a: string, b: string): number {
-  return a.localeCompare(b, undefined, { numeric: true });
-}
+const compareNames = new Intl.Collator(undefined, { numeric: true }).compare;
+const compareLabels = new Intl.Collator(undefined, { sensitivity: 'base' }).compare;
 
 function timestampOf(value: string): number {
   const parsed = Date.parse(value);
@@ -139,27 +138,23 @@ function timestampOf(value: string): number {
 
 export function sortEntries(entries: readonly RemoteEntry[], sort: SortState): RemoteEntry[] {
   const factor = sort.direction === 'asc' ? 1 : -1;
-  return [...entries].sort((a, b) => {
-    if (sort.key === 'name' || sort.key === 'size') {
-      const dirDiff = Number(b.isDir) - Number(a.isDir);
-      if (dirDiff !== 0) return dirDiff;
+  const { key } = sort;
+  const groupsDirectories = key === 'name' || key === 'size';
+  const sortValue = (entry: RemoteEntry): string | number => {
+    switch (key) {
+      case 'name': return entry.name;
+      case 'size': return entry.size;
+      case 'type': return classifyEntry(entry).label;
+      case 'modTime': return timestampOf(entry.modTime);
+      default: return entry[key] ?? '';
     }
+  };
 
-    let diff = 0;
-    if (sort.key === 'name') {
-      diff = compareNames(a.name, b.name);
-    } else if (sort.key === 'type') {
-      diff = classifyEntry(a).label.localeCompare(classifyEntry(b).label, undefined, { sensitivity: 'base' });
-    } else if (sort.key === 'size') {
-      diff = a.size - b.size;
-    } else if (sort.key === 'modTime') {
-      diff = timestampOf(a.modTime) - timestampOf(b.modTime);
-    } else {
-      const av = a[sort.key] ?? '';
-      const bv = b[sort.key] ?? '';
-      diff = av.localeCompare(bv, undefined, { sensitivity: 'base' });
-    }
-
-    return diff !== 0 ? diff * factor : compareNames(a.name, b.name);
-  });
+  return entries.map((entry) => ({ entry, value: sortValue(entry) })).sort((a, b) => {
+    if (groupsDirectories && a.entry.isDir !== b.entry.isDir) return a.entry.isDir ? -1 : 1;
+    const diff = typeof a.value === 'number' && typeof b.value === 'number'
+      ? a.value - b.value
+      : (key === 'name' ? compareNames : compareLabels)(String(a.value), String(b.value));
+    return diff !== 0 ? diff * factor : compareNames(a.entry.name, b.entry.name);
+  }).map(({ entry }) => entry);
 }
