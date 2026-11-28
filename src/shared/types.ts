@@ -111,6 +111,8 @@ export interface TransferStats {
   errors: number;
   transferring: TransferItem[];
   bwLimit: string | null;
+  bwLimitTx?: number;
+  bwLimitRx?: number;
 }
 
 export interface SyncJob {
@@ -127,7 +129,7 @@ export interface SyncJob {
 export interface SyncJobRun {
   jobId: string;
   rcloneJobId: number;
-  state: 'running' | 'finished' | 'failed' | 'stopped';
+  state: 'running' | 'reconnecting' | 'unknown' | 'finished' | 'failed' | 'stopped';
   startedAt: string;
   finishedAt: string | null;
   dryRun: boolean;

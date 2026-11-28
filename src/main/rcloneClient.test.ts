@@ -96,6 +96,14 @@ describe('expanded RC transport', () => {
     ]);
   });
 
+  it('preserves independent upload and download limits from rclone', async () => {
+    vi.stubGlobal('fetch', vi.fn<typeof globalThis.fetch>()
+      .mockResolvedValueOnce(Response.json({ bytes: 0 }))
+      .mockResolvedValueOnce(Response.json({ rate: '5Mi:off', bytesPerSecondTx: 5 * 1024 ** 2, bytesPerSecondRx: -1 })));
+    const client = new RcloneClient('http://localhost:5572');
+    await expect(client.stats()).resolves.toMatchObject({ bwLimit: '5Mi:off', bwLimitTx: 5 * 1024 ** 2, bwLimitRx: -1 });
+  });
+
   it('omits transfer engine errors and inline FS parameters from projections', async () => {
     const secret = crypto.randomUUID();
     vi.stubGlobal('fetch', vi.fn<typeof globalThis.fetch>()

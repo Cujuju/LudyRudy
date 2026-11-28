@@ -5,10 +5,10 @@ import type { Notify } from './mountManager';
 import { remoteFs, validRemoteName, type RcloneClient } from './rcloneClient';
 
 const RECENT_RUN_LIMIT = 50;
-const MAX_STATUS_FAILURES = 3;
 
 interface JobContext {
   client: () => RcloneClient;
+  isCurrentClient: (client: RcloneClient) => boolean;
   jobs: () => SyncJob[];
   save: (jobs: SyncJob[]) => void;
   notify: Notify;
@@ -21,7 +21,6 @@ interface ActiveRun {
   job: SyncJob;
   run: SyncJobRun;
   stopRequested: boolean;
-  failures: number;
 }
 
 function normalizeTarget(target: unknown): string {
@@ -53,22 +52,46 @@ export function openJobManager(context: JobContext) {
     context.change();
   }
 
+  function checkCurrentClient(entry: ActiveRun): boolean {
+    if (context.isCurrentClient(entry.client)) return true;
+    complete(entry, 'unknown', 'The rclone connection ended before the job result was known.');
+    return false;
+  }
+
   async function pollRun(entry: ActiveRun): Promise<void> {
+    if (!checkCurrentClient(entry)) return;
     try {
-      if (context.client() !== entry.client) {
-        complete(entry, 'failed', 'The rclone daemon changed.');
-        return;
-      }
       const status = await entry.client.call('job/status', { jobid: entry.run.rcloneJobId });
-      entry.failures = 0;
+      if (!checkCurrentClient(entry)) return;
+      if (typeof status.finished !== 'boolean' || typeof status.success !== 'boolean') throw new Error('Invalid job status.');
       if (entry.executeId && status.executeId !== entry.executeId) {
         complete(entry, 'failed', 'The rclone daemon restarted.');
       } else if (status.finished) {
         const state = status.success ? 'finished' : entry.stopRequested ? 'stopped' : 'failed';
         complete(entry, state, state === 'failed' ? 'rclone reported a job failure.' : null);
+      } else if (entry.run.state === 'reconnecting') {
+        entry.run = { ...entry.run, state: 'running', error: null };
+        context.change();
       }
     } catch {
-      if (++entry.failures >= MAX_STATUS_FAILURES) complete(entry, 'failed', 'Could not retrieve rclone job status.');
+      if (!checkCurrentClient(entry)) return;
+      const status = await entry.client.call('job/list').catch(() => null);
+      if (!checkCurrentClient(entry)) return;
+      if (entry.executeId && status && typeof status.executeId === 'string') {
+        if (status.executeId !== entry.executeId) {
+          complete(entry, 'failed', 'The rclone daemon restarted.');
+          return;
+        }
+        if (Array.isArray(status.jobids) && status.jobids.every(Number.isSafeInteger) &&
+          !status.jobids.includes(entry.run.rcloneJobId)) {
+          complete(entry, 'unknown', 'rclone no longer has this job’s result.');
+          return;
+        }
+      }
+      if (entry.run.state !== 'reconnecting') {
+        entry.run = { ...entry.run, state: 'reconnecting', error: 'Waiting for rclone job status.' };
+        context.change();
+      }
     }
   }
 
@@ -108,7 +131,7 @@ export function openJobManager(context: JobContext) {
         });
         if (!Number.isSafeInteger(jobid)) throw new Error('rclone did not return a job ID.');
         const run: SyncJobRun = { jobId: id, rcloneJobId: jobid, dryRun, state: 'running', startedAt: new Date().toISOString(), finishedAt: null, error: null };
-        active.add({ job, run, client: rc, executeId, stopRequested: false, failures: 0 });
+        active.add({ job, run, client: rc, executeId, stopRequested: false });
         context.change();
         return run;
       } finally {

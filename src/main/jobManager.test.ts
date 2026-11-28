@@ -10,10 +10,12 @@ const draft: SyncJob = {
 
 function fixture(initial: SyncJob[] = [draft]) {
   const status = { finished: false, success: false, executeId: 'daemon' };
+  const listedJobs = [16];
   const fetch = vi.fn<typeof globalThis.fetch>().mockImplementation(async (input) => {
     switch (new URL(String(input)).pathname) {
       case '/sync/sync':
       case '/sync/copy': return Response.json({ jobid: 16, executeId: 'daemon' });
+      case '/job/list': return Response.json({ executeId: status.executeId, jobids: listedJobs });
       case '/job/status': return Response.json({ ...status, error: crypto.randomUUID() });
       case '/job/stop': status.finished = true; return Response.json({});
       default: return Response.json({}, { status: 404 });
@@ -24,8 +26,13 @@ function fixture(initial: SyncJob[] = [draft]) {
   const notify = vi.fn();
   const change = vi.fn();
   const rc = new RcloneClient('http://localhost:5572');
-  const manager = openJobManager({ client: () => rc, jobs: () => jobs, save: (value) => { jobs = value; }, notify, change });
-  return { manager, fetch, status, notify, change };
+  let current = true;
+  const disconnect = () => { current = false; };
+  const manager = openJobManager({
+    client: () => rc, isCurrentClient: (client) => current && client === rc,
+    jobs: () => jobs, save: (value) => { jobs = value; }, notify, change,
+  });
+  return { manager, fetch, status, listedJobs, notify, change, disconnect };
 }
 
 afterEach(() => vi.unstubAllGlobals());
@@ -70,6 +77,54 @@ describe('JobManager', () => {
     expect(new URL(String(fetch.mock.lastCall?.[0])).pathname).toBe('/job/stop');
     await manager.poll();
     expect(manager.runs()[0]?.state).toBe('stopped');
+    expect(notify).not.toHaveBeenCalled();
+  });
+
+  it('keeps a job stoppable after status failures and recovers its running state', async () => {
+    const { manager, fetch, notify } = fixture();
+    await manager.runJob(draft.id);
+    for (let attempt = 0; attempt < 4; attempt++) {
+      fetch.mockRejectedValueOnce(new Error('Temporary status failure')).mockRejectedValueOnce(new Error('Temporary list failure'));
+      await manager.poll();
+    }
+    expect(manager.runs()[0]).toMatchObject({ state: 'reconnecting', finishedAt: null });
+    expect(notify).not.toHaveBeenCalled();
+    await expect(manager.runJob(draft.id)).rejects.toThrow('already running');
+
+    await manager.poll();
+    expect(manager.runs()[0]).toMatchObject({ state: 'running', error: null });
+    fetch.mockRejectedValueOnce(new Error('Temporary status failure'));
+    await manager.poll();
+    await manager.stopJob(16);
+    await manager.poll();
+    expect(manager.runs()[0]?.state).toBe('stopped');
+  });
+
+  it('releases an active job when the client is no longer current', async () => {
+    const { manager, fetch, disconnect } = fixture();
+    await manager.runJob(draft.id);
+    disconnect();
+    await manager.poll();
+    expect(manager.runs()[0]).toMatchObject({ state: 'unknown', finishedAt: expect.any(String) });
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports a restart when job status fails and job list reports another execution', async () => {
+    const { manager, fetch, status } = fixture();
+    await manager.runJob(draft.id);
+    status.executeId = 'new daemon';
+    fetch.mockRejectedValueOnce(new Error('Job status unavailable'));
+    await manager.poll();
+    expect(manager.runs()[0]).toMatchObject({ state: 'failed', error: 'The rclone daemon restarted.' });
+  });
+
+  it('reports an unknown outcome when the same daemon no longer lists the job', async () => {
+    const { manager, fetch, listedJobs, notify } = fixture();
+    await manager.runJob(draft.id);
+    listedJobs.length = 0;
+    fetch.mockRejectedValueOnce(new Error('Status unavailable'));
+    await manager.poll();
+    expect(manager.runs()[0]).toMatchObject({ state: 'unknown', finishedAt: expect.any(String) });
     expect(notify).not.toHaveBeenCalled();
   });
 

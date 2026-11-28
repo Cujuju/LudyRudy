@@ -64,6 +64,8 @@ export async function startDemoRclone() {
   let nextJob = 0;
   let bandwidth = 'off';
   let statsReset = false;
+  let failHistory = false;
+  let completedName = 'Documents/reports.zip';
   let closing: Promise<void> | undefined;
 
   function asString(value: unknown): string {
@@ -170,10 +172,18 @@ export async function startDemoRclone() {
       bytes: 768 * MIB, totalBytes: GIB, speed: TRANSFER.speed, eta: TRANSFER.eta,
       transfers: 2, totalTransfers: 3, checks: 12, errors: 0, transferring: [TRANSFER],
     }),
-    '/core/transferred': () => ({ transferred: statsReset ? [] : [{ name: 'Documents/reports.zip', size: 512 * MIB, bytes: 512 * MIB, checked: false, started_at: DEMO_TIMESTAMP, completed_at: DEMO_TIMESTAMP }] }),
+    '/core/transferred': () => {
+      if (failHistory) {
+        failHistory = false;
+        throw new Error('Transfer history temporarily unavailable.');
+      }
+      return { transferred: statsReset ? [] : [{ name: completedName, size: 512 * MIB, bytes: 512 * MIB, checked: false, started_at: DEMO_TIMESTAMP, completed_at: DEMO_TIMESTAMP }] };
+    },
     '/core/bwlimit': ({ rate }) => {
       if (typeof rate === 'string') bandwidth = rate;
-      return { rate: bandwidth };
+      const mib = /^(\d+)Mi?$/.exec(bandwidth)?.[1];
+      const bytes = bandwidth === 'off' ? -1 : mib === undefined ? undefined : Number(mib) * MIB;
+      return { rate: mib === undefined ? bandwidth : `${mib}Mi`, bytesPerSecondTx: bytes, bytesPerSecondRx: bytes };
     },
     '/config/listremotes': () => ({ remotes: Object.keys(remotes) }),
     '/config/dump': () => remotes,
@@ -287,5 +297,6 @@ export async function startDemoRclone() {
   return {
     endpoint: `http://127.0.0.1:${address.port}`, auth,
     close,
+    replaceTransferHistory(name: string) { completedName = name; failHistory = true; },
   };
 }

@@ -12,7 +12,7 @@ export interface RcItem {
   Encrypted?: string;
 }
 interface RcMount { Fs: string; MountPoint: string; MountedOn?: string }
-interface RcStats extends Omit<TransferStats, 'bwLimit' | 'transferring'> { transferring?: TransferStats['transferring'] }
+interface RcStats extends Omit<TransferStats, 'bwLimit' | 'bwLimitTx' | 'bwLimitRx' | 'transferring'> { transferring?: TransferStats['transferring'] }
 type ConfigDump = Record<string, Record<string, string>>;
 type NoParams = Record<string, never>;
 
@@ -46,7 +46,7 @@ interface RcMethods {
   'core/stats': [NoParams, RcStats];
   'core/stats-reset': [NoParams, RcResult];
   'core/transferred': [NoParams, { transferred: RcTransfer[] | null }];
-  'core/bwlimit': [{ rate?: string }, { rate: string }];
+  'core/bwlimit': [{ rate?: string }, { rate: string; bytesPerSecondTx?: number; bytesPerSecondRx?: number }];
   'config/listremotes': [NoParams, { remotes: string[] | null }];
   'config/dump': [NoParams, ConfigDump];
   'config/paths': [NoParams, { config: string; cache?: string }];
@@ -186,7 +186,7 @@ export class RcloneClient {
       transferring: (stats.transferring ?? []).map(({ name, bytes, size, speed, eta, srcFs, dstFs }) => ({
         name, bytes, size, speed, eta, srcFs: fsDisplay(srcFs), dstFs: fsDisplay(dstFs),
       })),
-      bwLimit: limit.rate };
+      bwLimit: limit.rate, bwLimitTx: limit.bytesPerSecondTx, bwLimitRx: limit.bytesPerSecondRx };
   }
 
   async mounts(windows = false): Promise<ActiveMount[]> {

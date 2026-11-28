@@ -37,7 +37,7 @@ export async function smoke(): Promise<string[]> {
           (name) => snapshot.remotes.some((remote) => remote.name === name));
     })`), abort);
     for (const label of PAGES) await openPage(page, label, abort);
-    await verifyUi(page, abort);
+    await verifyUi(page, abort, app.daemon.replaceTransferHistory);
     const verified = await page.eval<boolean>(`(async () => {
       const api = window.api;
       const vaultFiles = await api.browse('gdrive-vault', '');
@@ -74,7 +74,7 @@ export async function smoke(): Promise<string[]> {
       const run = await api.runJob(job.id);
       if (!run.dryRun) return false;
       await api.stopJob(run.rcloneJobId);
-      if (await api.bandwidthLimit('1M') !== '1M' || !(await api.completedTransfers()).length) return false;
+      if (await api.bandwidthLimit('1M') !== '1Mi' || !(await api.completedTransfers()).length) return false;
       const vault = (await api.refresh()).remotes.find(({ name }) => name === 'smoke-vault');
       if (vault?.directoryNameEncryption !== false || 'password' in vault.config) return false;
       await api.deleteRemote('smoke-vault');
@@ -91,7 +91,7 @@ export async function smoke(): Promise<string[]> {
   }
 }
 
-async function verifyUi(page: Cdp, abort: () => string | null) {
+async function verifyUi(page: Cdp, abort: () => string | null, replaceTransferHistory: (name: string) => void) {
   const click = async (label: string, scope = 'main') => {
     const clicked = await page.eval<boolean>(`(() => {
       const element = [...document.querySelectorAll(${JSON.stringify(scope + ' button')})].find((button) =>
@@ -241,6 +241,19 @@ async function verifyUi(page: Cdp, abort: () => string | null) {
   await until('folder deletion', async () => (await page.eval<boolean>(`!document.querySelector('tr[data-entry="Documents/Renamed folder"]')`)) || null, abort);
 
   await openPage(page, 'Transfers', abort);
+  replaceTransferHistory('replacement-history.zip');
+  await page.eval('window.api.stopDaemon().then(() => window.api.startDaemon())');
+  await contains('Retry');
+  if (await page.eval("document.querySelector('main')?.textContent?.includes('Documents/reports.zip')")) {
+    throw new Error('Transfer history from the previous connection is still visible.');
+  }
+  await click('Retry');
+  await contains('replacement-history.zip');
+  await click('5M');
+  await until('5M bandwidth preset selected', async () => (await page.eval<boolean>(`
+    [...document.querySelectorAll('[aria-label="Bandwidth presets"] button')].some(
+      (button) => button.textContent.trim() === '5M' && button.getAttribute('aria-pressed') === 'true')
+  `)) || null, abort);
   await click('25M');
   await until('bandwidth cap', async () => (await page.eval<boolean>(`document.querySelector('.bandwidth-controls button[aria-pressed=true]')?.textContent === '25M'`)) || null, abort);
   await click('Run dry run');
