@@ -132,7 +132,6 @@ export function openDaemon(hooks: Hooks = {}) {
     const epoch = inventoryEpoch;
     try {
       const { version, os } = await client.call('core/version');
-      if (typeof version !== 'string' || !version) throw new Error('rclone returned no version.');
       const reportedVersion = /^v[\w.+-]+$/.test(version) ? version : null;
       const hostPlatform = snapshot.daemon.mode === 'managed' ? process.platform
         : os === 'windows' ? 'win32' : typeof os === 'string' && /^[a-z][a-z0-9]*$/.test(os) ? os : null;

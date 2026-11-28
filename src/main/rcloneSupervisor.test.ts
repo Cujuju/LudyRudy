@@ -48,7 +48,7 @@ function fixture(quit: () => void = () => {}, os?: string) {
       case '/config/dump': return Response.json({ drive: { type: 'drive' } });
       case '/mount/listmounts': return Response.json({ mountPoints: [] });
       case '/mount/types': return Response.json({ mountTypes: ['cmount', 'nfsmount'] });
-      case '/core/stats': return Response.json({ bytes: 0 });
+      case '/core/stats': return Response.json({ bytes: 0, totalBytes: 0, speed: 0, eta: null, transfers: 0, totalTransfers: 0, checks: 0, errors: 0 });
       case '/core/bwlimit': return Response.json({ rate: 'off' });
       case '/core/quit': quit(); return Response.json({});
       default: return Response.json({});

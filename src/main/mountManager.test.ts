@@ -161,11 +161,19 @@ describe('MountManager', () => {
     expect(notify).toHaveBeenCalledWith('mountFailed', 'Mount failed', 'Vault');
   });
 
-  it('skips auto-mount on attached mode, but supports explicit mount and unmount', async () => {
-    const { mounts, fetch, active, rc } = fixture([draft]);
+  it.each(['current', 'legacy'])('skips attached auto-mount and supports explicit mount and unmount (%s response)', async (response) => {
+    const { mounts, fetch, notify, active, rc } = fixture([draft]);
+    if (response === 'legacy') {
+      const respond = fetch.getMockImplementation()!;
+      fetch.mockImplementation(async (url, init) => {
+        const result = await respond(url, init);
+        return new URL(String(url)).pathname === '/mount/mount' ? Response.json({}) : result;
+      });
+    }
     await mounts.autoMount();
     expect(fetch).not.toHaveBeenCalled();
     await expect(mounts.mountProfile(draft.id)).resolves.toBe(draft.mountPoint);
+    expect(notify).toHaveBeenCalledWith('mountReady', 'Mount ready', 'Vault');
     await mounts.unmount((await rc.mounts())[0]!.id);
     expect(active.size).toBe(0);
   });

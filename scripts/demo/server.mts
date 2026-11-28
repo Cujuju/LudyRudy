@@ -65,7 +65,7 @@ export async function startDemoRclone() {
   let nextJob = 0;
   let bandwidth = 'off';
   let statsReset = false;
-  let failHistory = false;
+  let malformedHistory = false;
   let completedName = 'Documents/reports.zip';
   let closing: Promise<void> | undefined;
 
@@ -174,9 +174,9 @@ export async function startDemoRclone() {
       transfers: 2, totalTransfers: 3, checks: 12, errors: 0, transferring: [TRANSFER],
     }),
     '/core/transferred': () => {
-      if (failHistory) {
-        failHistory = false;
-        throw new Error('Transfer history temporarily unavailable.');
+      if (malformedHistory) {
+        malformedHistory = false;
+        return { transferred: {} };
       }
       return { transferred: statsReset ? [] : [{ name: completedName, size: 512 * MIB, bytes: 512 * MIB, checked: false, started_at: DEMO_TIMESTAMP, completed_at: DEMO_TIMESTAMP }] };
     },
@@ -318,6 +318,6 @@ export async function startDemoRclone() {
       const entry = item('Documents/new-root-file.txt', 'text/plain');
       listings.get('gdrive')?.set(entry.Path, entry);
     },
-    replaceTransferHistory(name: string) { completedName = name; failHistory = true; },
+    replaceTransferHistory(name: string) { completedName = name; malformedHistory = true; },
   };
 }

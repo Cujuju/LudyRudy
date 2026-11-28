@@ -69,7 +69,7 @@ it('preflights the entire selection before transferring any file', async () => {
   dialog.showOpenDialog.mockResolvedValue({ canceled: false, filePaths: [resolve('first.txt'), resolve('second.txt')] });
   const fetch = vi.fn<typeof globalThis.fetch>()
     .mockResolvedValueOnce(Response.json({ item: null }))
-    .mockResolvedValueOnce(Response.json({ item: { Path: 'docs/second.txt', Name: 'second.txt' } }));
+    .mockResolvedValueOnce(Response.json({ item: { Path: 'docs/second.txt', Name: 'second.txt', Size: 12, IsDir: false } }));
   vi.stubGlobal('fetch', fetch);
   await expect(managedFiles().uploadFiles('drive', 'docs')).rejects.toThrow('The destination already exists.');
   expect(fetch.mock.calls.map(([url]) => new URL(String(url)).pathname)).toEqual(['/operations/stat', '/operations/stat']);

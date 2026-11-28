@@ -132,9 +132,7 @@ export function registerIpc({ daemon, mounts, jobs, auth, remotes, current, refr
   });
   invoke('vfsStats', async (remote, path = '') => {
     const { inUse, metadataCache } = await daemon.forRemote(remote).call('vfs/stats', { fs: remoteFs(remote, browserPath(path, true)) });
-    const cache = metadataCache as { files?: unknown; dirs?: unknown } | undefined;
-    const count = (value: unknown) => typeof value === 'number' ? value : 0;
-    return { inUse: count(inUse), files: count(cache?.files), dirs: count(cache?.dirs) };
+    return { inUse, files: metadataCache.files, dirs: metadataCache.dirs };
   });
   invoke('vfsRefresh', async (remote, path = '', dir, recursive = false) => {
     await daemon.forRemote(remote).call('vfs/refresh', {
