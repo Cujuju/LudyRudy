@@ -198,10 +198,24 @@ export async function startDemoRclone() {
       listings.set(name, new Map());
       return {};
     },
-    '/config/update': ({ name: value, parameters }) => {
+    '/config/update': ({ name: value, parameters, opt }) => {
       const name = asString(value);
       if (!listings.has(name)) throw new Error('Unknown remote.');
       remotes[name] = { ...remotes[name], ...configValues(parameters) };
+      if (remotes[name].type === 'drive') {
+        if (!opt || typeof opt !== 'object' || !('continue' in opt)) {
+          return { State: 'client_id_warning', Option: { Name: 'config_shared_client_id', Type: 'bool' } };
+        }
+        if ('state' in opt && opt.state === 'client_id_warning' && 'result' in opt && opt.result === 'true') {
+          return { State: '*oauth-confirm,teamdrive,oauth,', Option: { Name: 'config_refresh_token', Type: 'bool' } };
+        }
+        if ('state' in opt && opt.state === '*oauth-confirm,teamdrive,oauth,' && 'result' in opt && opt.result === 'false') {
+          return { State: 'teamdrive_ok', Option: { Name: 'config_change_team_drive', Type: 'bool' } };
+        }
+        if (!('state' in opt) || opt.state !== 'teamdrive_ok' || !('result' in opt) || opt.result !== 'false') {
+          return { Error: 'Unexpected demo continuation.' };
+        }
+      }
       return {};
     },
     '/config/delete': ({ name }) => {

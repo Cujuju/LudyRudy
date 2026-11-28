@@ -5,6 +5,7 @@ import type { CryptDraft, RemoteSummary } from '@shared/types';
 import { useAction } from '../lib/actions';
 import { remoteOptions } from '../lib/remotes';
 import { ProviderIcon } from './ProviderIcon';
+import { RemoteConfigStep, useRemoteConfiguration } from './RemoteConfigStep';
 import { Drawer, Feedback, FormActions, SecretInput, Select, Segmented, Toggle } from './ui';
 
 const CIPHER_MODES = ['standard', 'obfuscate', 'off'] as const;
@@ -15,16 +16,16 @@ export function CryptDrawer(props: { remotes: RemoteSummary[]; target?: string; 
     name: '', targetRemote: untrack(() => props.target ?? props.remotes[0]?.name ?? ''), targetPath: '', password: '', salt: '',
     filenameEncryption: 'standard', directoryNameEncryption: true, mount: false,
   });
-  const action = useAction();
+  const { action, configuration, save: writeConfig } = useRemoteConfiguration(() => props.saved(draft.name.trim(), draft.mount));
   const tools = useAction();
   const selectedRemote = () => props.remotes.find(({ name }) => name === draft.targetRemote);
   const hasTarget = () => !!selectedRemote();
 
   async function save() {
-    if (!hasTarget()) return;
-    const { mount, ...vault } = draft;
+    if (configuration() || !hasTarget()) return;
+    const { mount: _mount, ...vault } = draft;
     vault.name = vault.name.trim();
-    if (await action.run(() => window.api.createCryptRemote(vault))) props.saved(vault.name, mount);
+    await writeConfig(() => window.api.createCryptRemote(vault));
   }
 
   function generate(key: 'password' | 'salt') {
@@ -34,7 +35,7 @@ export function CryptDrawer(props: { remotes: RemoteSummary[]; target?: string; 
   return (
     <Drawer title="Wrap with encryption" description="Create a vault backed by an existing remote." busy={action.pending()} close={props.close}>
       <form class="form-stack" onSubmit={(event) => { event.preventDefault(); void save(); }}>
-        <fieldset disabled={action.pending()}>
+        <fieldset disabled={action.pending() || !!configuration()}>
           <label class="field">Storage remote
             <span class="row provider-select">
               <Show when={selectedRemote()}>{(remote) => <ProviderIcon type={remote().type} size="sm" />}</Show>
@@ -68,8 +69,12 @@ export function CryptDrawer(props: { remotes: RemoteSummary[]; target?: string; 
           <Show when={draft.mount}><p class="secondary">Choose the local mount point after creating the vault.</p></Show>
         </fieldset>
         <Feedback action={tools} />
-        <Feedback action={action} />
-        <FormActions label="Create vault" busy={action.pending()} disabled={tools.pending() || !hasTarget()} close={props.close} />
+        <Show when={configuration()} fallback={
+          <>
+            <Feedback action={action} />
+            <FormActions label="Create vault" busy={action.pending()} disabled={tools.pending() || !hasTarget()} close={props.close} />
+          </>
+        }>{(step) => <RemoteConfigStep configuration={step()} action={action} save={writeConfig} close={props.close} />}</Show>
       </form>
     </Drawer>
   );

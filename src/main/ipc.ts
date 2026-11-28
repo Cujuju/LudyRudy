@@ -99,6 +99,7 @@ export function registerIpc({ daemon, mounts, jobs, auth, remotes, current, refr
   invoke('remoteEditor', remotes.remoteEditor);
   invoke('createRemote', mutate(remotes.createRemote, daemon.invalidateRemoteInventory));
   invoke('updateRemote', mutate(remotes.updateRemote, daemon.invalidateRemoteInventory));
+  invoke('continueRemoteConfig', mutate(remotes.continueRemoteConfig, daemon.invalidateRemoteInventory));
   invoke('deleteRemote', mutate(remotes.deleteRemote, daemon.invalidateRemoteInventory));
   invoke('testRemote', remotes.testRemote);
   invoke('createCryptRemote', mutate(remotes.createCryptRemote, daemon.invalidateRemoteInventory));

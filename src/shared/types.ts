@@ -58,7 +58,16 @@ export interface ProviderOptionSpec {
 export interface RemoteEditorData {
   providers: ProviderInfo[];
   values: RemoteParameters;
+  configuration?: PendingRemoteConfig;
 }
+
+export interface PendingRemoteConfig {
+  state: 'pending';
+  id: string;
+  question: 'shared-client' | 'refresh-token' | 'shared-drive';
+}
+
+export type RemoteConfigResult = { state: 'complete' } | PendingRemoteConfig | { state: 'incomplete'; message: string };
 
 export const VFS_CACHE_MODES = ['off', 'minimal', 'writes', 'full'] as const;
 

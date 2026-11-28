@@ -33,7 +33,11 @@ export interface RcMountOptions {
     CacheMode: MountProfile['vfsCacheMode']; CacheMaxSize?: string; CacheMaxAge?: string; ReadOnly: boolean;
   };
 }
-interface RcConfig { name: string; parameters: RemoteParameters; opt: { obscure: boolean; nonInteractive?: boolean } }
+interface RcConfig {
+  name: string;
+  parameters: RemoteParameters;
+  opt: { obscure: boolean; nonInteractive?: boolean; continue?: boolean; state?: string; result?: string };
+}
 interface RcSync { srcFs: string; dstFs: string; _async: true; _config: { DryRun: boolean }; _filter: { ExcludeRule: string[] } }
 interface RcJobStatus { executeId?: string; finished: boolean; success: boolean; error?: string }
 interface RcTransfer { name: string; size: number; bytes: number; checked: boolean; started_at: string; completed_at: string; error?: string }
