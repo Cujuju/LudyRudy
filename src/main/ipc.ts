@@ -13,7 +13,7 @@ import { describeFs, NO_CLOBBER, RcloneClient, remoteFs } from './rcloneClient';
 import { managedPaths, type RcloneSupervisor } from './rcloneSupervisor';
 import type { RcloneAuth } from './rcloneAuth';
 import { generateSecret, type openRemotes } from './remoteService';
-import { getSettings, readConfigPassword, updateSettings } from './settingsStore';
+import { getSettings, getSettingsProblem, readConfigPassword, updateSettings } from './settingsStore';
 import { isQuitting, mainWindow } from './window';
 
 declare const __APP_VERSION__: string;
@@ -52,7 +52,7 @@ export function registerIpc({ daemon, mounts, jobs, auth, remotes, current, refr
   };
   invoke('initialize', () => Promise.resolve({
     settings: getSettings(), build: parseBuildInfo(__APP_VERSION__, __APP_BUILD__),
-    snapshot: current(), launchAtLoginSupported: supportsLaunchAtLogin(), maximized: mainWindow()?.isMaximized() ?? false,
+    snapshot: current(), settingsProblem: getSettingsProblem(), launchAtLoginSupported: supportsLaunchAtLogin(), maximized: mainWindow()?.isMaximized() ?? false,
   }));
   invoke('refresh', async () => { await daemon.refreshLocal(); return refresh(); });
   invoke('updateGeneral', (patch) => Promise.resolve(updateSettings({ general: { ...getSettings().general, ...patch } })));
@@ -79,6 +79,8 @@ export function registerIpc({ daemon, mounts, jobs, auth, remotes, current, refr
   invoke('restartDaemon', daemon.restart);
   invoke('bandwidthLimit', async (rate) => {
     if (rate !== undefined && (typeof rate !== 'string' || !rate.trim())) throw new Error('Enter an rclone bandwidth rate.');
+    const settingsProblem = getSettingsProblem();
+    if (rate !== undefined && daemon.current().daemon.mode === 'managed' && settingsProblem) throw new Error(settingsProblem);
     const { rate: value } = await daemon.client().call('core/bwlimit', rate === undefined ? {} : { rate });
     if (rate !== undefined) {
       if (daemon.current().daemon.mode === 'managed') updateSettings({ daemon: { ...getSettings().daemon, bwLimit: rate } });
