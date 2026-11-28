@@ -4,6 +4,7 @@ import type { ActiveMount, MountProfile } from '@shared/types';
 import type { PageProps } from '../store';
 import { useAction } from '../lib/actions';
 import { formatSpeed } from '../lib/format';
+import { daemonHostLabel } from '../lib/platform';
 import { Confirm, Empty, Feedback, SectionHeader } from './ui';
 import { VolumeConduit } from './VolumeConduit';
 
@@ -61,7 +62,8 @@ function MountRow(props: MountProps & { profile?: MountProfile; external?: Activ
     (item) => matchesMount(item.srcFs, spec()) || matchesMount(item.dstFs, spec()),
   );
   const transferSpeed = () => activeTransfers().reduce((sum, item) => sum + item.speed, 0);
-  const canMount = () => props.store.snapshot()?.daemon.state === 'running' && !!remote()
+  const daemon = () => props.store.snapshot()?.daemon;
+  const canMount = () => daemon()?.state === 'running' && !!daemon()?.hostPlatform && !!remote()
     && (props.store.snapshot()?.daemon.attached || props.store.snapshot()?.prereqs.mountBackend.available);
   return (
     <article class="ledger-row" classList={{ 'compact-mount': !props.detailed }} data-mount={props.profile?.id}>
@@ -86,11 +88,14 @@ function MountRow(props: MountProps & { profile?: MountProfile; external?: Activ
         )}</Show>
       </div>
       <VolumeConduit mountPoint={path()} spec={spec()} remote={remote()} remotes={remotes()} />
+      <Show when={daemon()?.mode === 'attached'}><small class="secondary">Path on {daemonHostLabel(daemon())}</small></Show>
       <div class="actions mount-actions">
         <Show when={mount()} fallback={<button type="button" class="button" disabled={action.pending() || !canMount()}
           onClick={() => void action.run(() => untrack(() => window.api.mountProfile(props.profile!.id)), 'Drive mounted.')}>Mount drive</button>}>
           <button type="button" class="button" disabled={action.pending()} onClick={() => void action.run(() => untrack(() => window.api.unmount(path())), 'Drive unmounted.')}>Unmount</button>
-          <button type="button" class="button quiet" disabled={action.pending()} onClick={() => void action.run(() => untrack(() => window.api.revealMount(path())))}>Open folder</button>
+          <Show when={daemon()?.mode === 'managed'}>
+            <button type="button" class="button quiet" disabled={action.pending()} onClick={() => void action.run(() => untrack(() => window.api.revealMount(path())))}>Open folder</button>
+          </Show>
         </Show>
         <Show when={props.detailed && props.profile}>{(profile) => (
           <>

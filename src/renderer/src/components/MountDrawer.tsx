@@ -2,9 +2,10 @@ import { createMemo, createSignal, createUniqueId, For, Match, onMount, Show, Sw
 import { createStore, produce, unwrap } from 'solid-js/store';
 import { FolderOpen } from 'lucide-solid';
 import { CACHE_AGE_PRESETS, CACHE_SIZE_PRESETS, MOUNT_OPTION_CATALOG, type MountOption, type MountOptionMap, type MountOptionValue } from '@shared/mountOptions';
-import { VFS_CACHE_MODES, type MountProfile, type RemoteSummary } from '@shared/types';
+import { VFS_CACHE_MODES, type DaemonStatus, type MountProfile, type RemoteSummary } from '@shared/types';
 import { useAction, useNativePicker } from '../lib/actions';
 import { remoteOptions } from '../lib/remotes';
+import { daemonHostLabel } from '../lib/platform';
 import { ProviderIcon } from './ProviderIcon';
 import { Drawer, Feedback, FormActions, Select, Segmented, Toggle } from './ui';
 
@@ -68,15 +69,14 @@ function OptionEditor(props: { option: MountOption; value: MountOptionValue | un
 }
 
 function AdvancedOptions(props: {
-  mount?: MountOptionMap; vfs?: MountOptionMap;
+  mount?: MountOptionMap; vfs?: MountOptionMap; platform?: string | null;
   onChange: (option: MountOption, value: MountOptionValue | undefined) => void;
 }) {
   const id = createUniqueId();
-  const platform = window.api.platform;
   const value = (option: MountOption) => props[option.group]?.[option.key];
   const active = createMemo(() => MOUNT_OPTION_CATALOG.filter((option) => value(option) !== undefined));
   const available = createMemo(() => MOUNT_OPTION_CATALOG.filter((option) =>
-    value(option) !== undefined || option.platforms === 'all' || option.platforms.some((system) => system === platform)));
+    value(option) !== undefined || option.platforms === 'all' || option.platforms.some((system) => system === props.platform)));
   return (
     <div class="field">
       <label for={id}>Advanced options</label>
@@ -113,7 +113,7 @@ export function mountDraft(name: string, remote: string, cache: MountProfile['vf
 }
 
 export function MountDrawer(props: {
-  profile?: MountProfile; remote?: string; remotes: RemoteSummary[]; cache: MountProfile['vfsCacheMode']; connected: boolean; close: () => void;
+  profile?: MountProfile; remote?: string; remotes: RemoteSummary[]; cache: MountProfile['vfsCacheMode']; daemon?: DaemonStatus; close: () => void;
 }) {
   const [draft, setDraft] = createStore(untrack(() => {
     const initial = props.profile ?? mountDraft(props.remote ?? '', props.remote ?? props.remotes[0]?.name ?? '', props.cache);
@@ -125,7 +125,8 @@ export function MountDrawer(props: {
   const action = useNativePicker();
   const selectedRemote = () => props.remotes.find(({ name }) => name === draft.remote);
   const lookup = useAction();
-  const cannotSave = () => !draft.remote || lookup.pending();
+  const platform = () => props.daemon?.hostPlatform;
+  const cannotSave = () => !draft.remote || !platform() || lookup.pending();
   const remotes = createMemo(() => {
     const options = remoteOptions(props.remotes);
     if (draft.remote && !options.some(({ value }) => value === draft.remote)) {
@@ -139,9 +140,9 @@ export function MountDrawer(props: {
     return options;
   });
   const mountPointId = createUniqueId();
-  const mountPointHint = window.api.platform === 'win32' ? 'e.g. X:\\ or C:\\Mounts\\vault' : 'e.g. /mnt/vault';
+  const mountPointHint = () => platform() === 'win32' ? 'e.g. X:\\ or C:\\Mounts\\vault' : platform() ? 'e.g. /mnt/vault' : undefined;
   onMount(() => {
-    if (props.connected) void lookup.run(async () => setTypes(await window.api.mountTypes()));
+    if (props.daemon?.state === 'running') void lookup.run(async () => setTypes(await window.api.mountTypes()));
   });
 
   async function save() {
@@ -175,10 +176,15 @@ export function MountDrawer(props: {
           <div class="field">
             <label for={mountPointId}>Mount point</label>
             <div class="input-group">
-              <input id={mountPointId} class="path" placeholder={mountPointHint} required value={draft.mountPoint}
+              <input id={mountPointId} class="path" placeholder={mountPointHint()} required value={draft.mountPoint}
                 onInput={(event) => setDraft('mountPoint', event.currentTarget.value)} />
-              <button type="button" class="button input-addon" aria-label="Choose folder" onClick={() => void action.choose(window.api.pickDirectory, (path) => { setDraft('mountPoint', path); })}><FolderOpen size={14} aria-hidden="true" /> Browse</button>
+              <Show when={props.daemon?.mode === 'managed'}>
+                <button type="button" class="button input-addon" aria-label="Choose folder" onClick={() => void action.choose(window.api.pickDirectory, (path) => {
+                  if (untrack(() => props.daemon?.mode) === 'managed') setDraft('mountPoint', path);
+                })}><FolderOpen size={14} aria-hidden="true" /> Browse</button>
+              </Show>
             </div>
+            <small class="field-hint">{platform() ? `Path on ${daemonHostLabel(props.daemon)}` : 'Connect to rclone to verify the mount host.'}</small>
           </div>
           <div class="setting-row"><span>VFS cache mode</span>
             <Segmented label="VFS cache mode" options={VFS_CACHE_MODES} value={draft.vfsCacheMode ?? 'off'} onChange={(value) => setDraft('vfsCacheMode', value)} />
@@ -193,7 +199,7 @@ export function MountDrawer(props: {
           <Toggle label="Mount at daemon startup" checked={draft.autoMount} onChange={(value) => setDraft('autoMount', value)} />
           <label class="field">Mount type<Select label="Mount type" value={draft.mountType ?? ''} options={mountTypes()}
             onChange={(value) => setDraft('mountType', value || undefined)} /></label>
-          <AdvancedOptions mount={draft.mountOpts} vfs={draft.vfsOpts} onChange={changeOption} />
+          <AdvancedOptions mount={draft.mountOpts} vfs={draft.vfsOpts} platform={platform()} onChange={changeOption} />
           <details class="advanced" open={showRawFlags}>
             <summary>Raw FUSE / WinFsp flags</summary>
             <label class="field">Extra flags<textarea placeholder="One flag per line" value={flags()} onInput={(event) => setFlags(event.currentTarget.value)} /></label>

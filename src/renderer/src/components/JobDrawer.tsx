@@ -17,7 +17,7 @@ export function JobDrawer(props: { job?: SyncJob; attached: boolean; close: () =
   const pathId = createUniqueId();
 
   function choose(field: 'source' | 'destination') {
-    void action.choose(window.api.pickDirectory, (folder) => { setDraft(field, folder); });
+    void action.choose(window.api.pickDirectory, (folder) => { if (!untrack(() => props.attached)) setDraft(field, folder); });
   }
 
   async function save() {

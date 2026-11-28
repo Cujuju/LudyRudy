@@ -53,14 +53,18 @@ else {
       },
     });
     const auth = openAuth((session) => send(EVENTS.onAuth, session));
-    const remotes = openRemotes(daemon, auth);
+    const platform = () => daemon.current().daemon.hostPlatform;
+    const remotes = openRemotes({ client: daemon.client, isCurrentClient: daemon.isCurrentClient, platform }, auth);
     const mounts = openMountManager({
       client: daemon.client, profiles: () => getSettings().mounts, save: (mounts) => { updateSettings({ mounts }); },
       defaults: () => getSettings().daemon.defaultVfsCacheMode, managed: () => daemon.current().daemon.mode === 'managed',
+      platform,
       reveal: (path) => shell.openPath(path), notify,
     });
     const jobs = openJobManager({
       client: daemon.client, isCurrentClient: daemon.isCurrentClient, jobs: () => getSettings().jobs, save: (jobs) => { updateSettings({ jobs }); },
+      platform,
+      hasRemote: (name) => daemon.current().remotes.some((remote) => remote.name === name),
       notify, change: () => publish(),
     });
     const current = () => ({ ...daemon.current(), jobRuns: jobs.runs() });

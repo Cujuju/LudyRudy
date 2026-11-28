@@ -53,8 +53,8 @@ function incompleteConfig(reason: string): RemoteConfigResult {
   return { state: 'incomplete', message: `${reason} rclone may have saved partial changes. Open the remote’s editor to retry or finish configuration in rclone.` };
 }
 
-export function requireRemoteName(name: unknown): asserts name is string {
-  if (!validRemoteName(name)) throw new Error('Invalid rclone remote name.');
+export function requireRemoteName(name: unknown, windows: boolean): asserts name is string {
+  if (!validRemoteName(name, windows)) throw new Error('Invalid rclone remote name.');
 }
 
 export function generateSecret(bits = DEFAULT_SECRET_BITS): string {
@@ -104,7 +104,7 @@ function providerInfo(raw: Record<string, unknown>): ProviderInfo[] {
     isOAuth: options.some((option) => option.name === 'token'), isCrypt: Name === 'crypt' }];
 }
 
-function projectRemoteEditor(provider: ProviderInfo, config: Record<string, unknown>): RemoteEditorData {
+function projectRemoteEditor(provider: ProviderInfo, config: Record<string, unknown>, windows: boolean): RemoteEditorData {
   const sensitive = new Set(provider.options.filter((option) => option.sensitive).map(({ name }) => name));
   const values = Object.fromEntries(provider.options.flatMap(({ name }) => {
     if (sensitive.has(name) || !Object.hasOwn(config, name)) return [];
@@ -113,7 +113,7 @@ function projectRemoteEditor(provider: ProviderInfo, config: Record<string, unkn
     // Connection strings can carry inline credentials even on options rclone doesn't mark sensitive.
     const url = URL.parse(value);
     if (url?.username || url?.password || url?.search || url?.hash ||
-      (name === 'remote' && value && describeFs(value, false).path === null)) {
+      (name === 'remote' && value && describeFs(value, windows).path === null)) {
       sensitive.add(name);
       return [];
     }
@@ -148,14 +148,17 @@ function assertCryptTarget(remotes: RemoteSummary[], name: string, target: strin
   }
 }
 
-function validateCryptParameters(remotes: RemoteSummary[], name: string, config: RemoteParameters): void {
+function validateCryptParameters(remotes: RemoteSummary[], name: string, config: RemoteParameters, windows: boolean): void {
   const target = typeof config.remote === 'string' ? /^([^:]+):/.exec(config.remote)?.[1] : undefined;
-  requireRemoteName(target);
+  requireRemoteName(target, windows);
   assertCryptTarget(remotes, name, target);
 }
 
-export function openRemotes({ client, isCurrentClient }: Pick<RcloneSupervisor, 'client' | 'isCurrentClient'>, auth: Pick<RcloneAuth, 'token'>) {
+type RemoteContext = Pick<RcloneSupervisor, 'client' | 'isCurrentClient'> & { platform: () => string | null };
+
+export function openRemotes({ client, isCurrentClient, platform }: RemoteContext, auth: Pick<RcloneAuth, 'token'>) {
   const write = createSerialQueue();
+  const usesWindowsPaths = () => platform() === 'win32';
   const continuations = new Map<string, ConfigContinuation>();
 
   async function configResult(rc: RcloneClient, name: string, type: string, identity: string | undefined, response: Record<string, unknown>): Promise<RemoteConfigResult> {
@@ -188,7 +191,7 @@ export function openRemotes({ client, isCurrentClient }: Pick<RcloneSupervisor, 
     if (!identity) throw new Error('Could not identify the rclone daemon and config. Reconnect before authorizing.');
     const changes = parameters(draft.parameters);
     const remote = draft.name;
-    if (remote !== undefined) requireRemoteName(remote);
+    if (remote !== undefined) requireRemoteName(remote, usesWindowsPaths());
     const [provider, saved] = await Promise.all([
       knownProvider ?? listProviders(rc).then((items) => items.find(({ name }) => name === draft.type)),
       remote === undefined ? undefined : rc.call('config/get', { name: remote }),
@@ -221,15 +224,16 @@ export function openRemotes({ client, isCurrentClient }: Pick<RcloneSupervisor, 
 
   function createRemote(draft: RemoteDraft): Promise<RemoteConfigResult> {
     return write(async () => {
-      requireRemoteName(draft?.name);
+      const windows = usesWindowsPaths();
+      requireRemoteName(draft?.name, windows);
       const rc = client();
-      const remotes = await rc.listRemotes();
+      const remotes = await rc.listRemotes(windows);
       if (remotes.some(({ name }) => name === draft.name)) throw new Error('A remote with that name already exists.');
       const provider = (await listProviders(rc)).find(({ name }) => name === draft.type);
       if (!provider) throw new Error('Unknown rclone provider.');
       const identity = await configIdentity(rc);
       const config = await configFor(rc, draft, identity, false, provider);
-      if (provider.isCrypt) validateCryptParameters(remotes, draft.name, config);
+      if (provider.isCrypt) validateCryptParameters(remotes, draft.name, config, windows);
       if (!isCurrentClient(rc)) throw new Error('The rclone connection changed.');
       continuations.delete(draft.name);
       const result = await rc.call('config/create', { name: draft.name, type: provider.name, parameters: config, opt: WRITE_OPTIONS });
@@ -247,12 +251,13 @@ export function openRemotes({ client, isCurrentClient }: Pick<RcloneSupervisor, 
     async remoteEditor(remote?: Pick<RemoteSummary, 'name' | 'type'>): Promise<RemoteEditorData> {
       const rc = client();
       if (!remote) return { providers: await listProviders(rc), values: {} };
-      requireRemoteName(remote.name);
+      const windows = usesWindowsPaths();
+      requireRemoteName(remote.name, windows);
       const [providers, config] = await Promise.all([listProviders(rc), rc.call('config/get', { name: remote.name })]);
       if (!isCurrentClient(rc) || config.type !== remote.type) throw new Error('The remote changed. Reopen the editor to reload its settings.');
       const provider = providers.find(({ name }) => name === config.type);
       if (!provider) throw new Error('Unknown rclone provider.');
-      const data = projectRemoteEditor(provider, config);
+      const data = projectRemoteEditor(provider, config, windows);
       const current = continuations.get(remote.name);
       if (current?.client === rc && current.configFingerprint === configFingerprint(config)
         && current.identity === await configIdentity(rc) && isCurrentClient(rc)
@@ -263,7 +268,7 @@ export function openRemotes({ client, isCurrentClient }: Pick<RcloneSupervisor, 
     },
     createRemote,
     createCryptRemote(draft: CryptDraft): Promise<RemoteConfigResult> {
-      requireRemoteName(draft?.targetRemote);
+      requireRemoteName(draft?.targetRemote, usesWindowsPaths());
       if (typeof draft.targetPath !== 'string' || typeof draft.password !== 'string' || !draft.password ||
         (draft.salt !== undefined && typeof draft.salt !== 'string') ||
         !['standard', 'obfuscate', 'off'].includes(draft.filenameEncryption) || typeof draft.directoryNameEncryption !== 'boolean') {
@@ -277,15 +282,16 @@ export function openRemotes({ client, isCurrentClient }: Pick<RcloneSupervisor, 
     },
     updateRemote(draft: RemoteDraft): Promise<RemoteConfigResult> {
       return write(async () => {
-        requireRemoteName(draft?.name);
+        const windows = usesWindowsPaths();
+        requireRemoteName(draft?.name, windows);
         const rc = client();
-        const remotes = await rc.listRemotes();
+        const remotes = await rc.listRemotes(windows);
         const existing = remotes.find(({ name }) => name === draft.name);
         if (!existing) throw new Error('Unknown rclone remote.');
         if (draft.type !== existing.type) throw new Error('The remote provider cannot be changed.');
         const identity = await configIdentity(rc);
         const config = await configFor(rc, draft, identity, true);
-        if (existing.isCrypt && 'remote' in config) validateCryptParameters(remotes, draft.name, config);
+        if (existing.isCrypt && 'remote' in config) validateCryptParameters(remotes, draft.name, config, windows);
         if (!isCurrentClient(rc)) throw new Error('The rclone connection changed.');
         continuations.delete(draft.name);
         const result = await rc.call('config/update', { name: draft.name, parameters: config, opt: WRITE_OPTIONS });
@@ -319,13 +325,13 @@ export function openRemotes({ client, isCurrentClient }: Pick<RcloneSupervisor, 
     },
     deleteRemote(name: string): Promise<void> {
       return write(async () => {
-        requireRemoteName(name);
+        requireRemoteName(name, usesWindowsPaths());
         await client().call('config/delete', { name });
         continuations.delete(name);
       });
     },
     async testRemote(name: string): Promise<void> {
-      requireRemoteName(name);
+      requireRemoteName(name, usesWindowsPaths());
       const rc = client();
       const { remotes } = await rc.call('config/listremotes');
       if (!remotes?.includes(name)) throw new Error('Unknown rclone remote.');
