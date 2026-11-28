@@ -6,12 +6,13 @@ import {
   FileImage, FileMusic, FileSpreadsheet, FileText, FileVideoCamera, Folder, FolderPlus,
   Pencil, Presentation, RefreshCw, Settings, Trash2, Upload,
 } from 'lucide-solid';
-import type { RemoteEntry, RemoteQuota } from '@shared/types';
+import type { RemoteEntry } from '@shared/types';
 import { editedRemotePath, parentRemotePath } from '@shared/remotePath';
 import { ProviderIcon } from '../components/ProviderIcon';
 import { Quota } from '../components/Quota';
 import { Confirm, Drawer, Empty, Feedback, FormActions, PageHeader, SearchField, Select } from '../components/ui';
-import { errorMessage, useAction } from '../lib/actions';
+import { useAction } from '../lib/actions';
+import { createBrowserRequest } from '../lib/browserCache';
 import {
   BROWSER_COLUMNS, classifyEntry, DEFAULT_BROWSER_COLUMNS, isBrowserColumnList, nextSort, sortEntries,
   type BrowserColumnKey, type FileKind, type SortKey, type SortState,
@@ -150,91 +151,30 @@ function BrowserSession(props: PageProps) {
   const session = untrack(() => props.store.browserSession());
   const sameSession = () => untrack(() => props.store.browserSession()) === session;
   let disposed = false;
-  onCleanup(() => {
-    disposed = true;
-    listingSeq += 1;
-    quotaSeq += 1;
-  });
-  type ListingState = { target: { remote: string; path: string }; items: RemoteEntry[]; loading: boolean; error: string };
-  type QuotaState = { name: string; value: RemoteQuota | null; loading: boolean; error: string };
-  const [entries, setEntries] = createSignal<ListingState>();
-  const [quota, setQuota] = createSignal<QuotaState>();
-  let listingSeq = 0;
-  let quotaSeq = 0;
+  onCleanup(() => { disposed = true; });
+  type DirectoryTarget = { remote: string; path: string };
+  const listing = createBrowserRequest({
+    key: ({ remote, path }: DirectoryTarget) => JSON.stringify([remote, path]),
+    peek: ({ remote, path }) => {
+      const cached = cache.peekDirectory(remote, path);
+      return cached && { value: cached.items, fresh: cached.fresh };
+    },
+    fetch: ({ remote, path }, force) => cache.loadDirectory(remote, path, () => window.api.browse(remote, path), { force }),
+  }, sameSession);
+  const quota = createBrowserRequest({
+    key: (name: string) => name,
+    peek: cache.peekQuota,
+    fetch: (name, force) => cache.loadQuota(name, () => window.api.quota(name), { force }),
+  }, sameSession);
 
-  async function loadListing(target: { remote: string; path: string }, force = false): Promise<void> {
-    const seq = ++listingSeq;
-    try {
-      const cached = force ? undefined : cache.peekDirectory(target.remote, target.path);
-      if (cached) {
-        setEntries({ target, items: cached.items, loading: !cached.fresh, error: '' });
-        if (cached.fresh) return;
-      } else {
-        const prev = untrack(entries);
-        const keep = prev?.target.remote === target.remote && prev.target.path === target.path ? prev.items : [];
-        setEntries({ target, items: keep, loading: true, error: '' });
-      }
-      const items = await cache.loadDirectory(
-        target.remote, target.path, () => window.api.browse(target.remote, target.path), { force: force || !!cached },
-      );
-      if (seq === listingSeq) setEntries({ target, items, loading: false, error: '' });
-    } catch (cause) {
-      if (seq !== listingSeq) return;
-      const prev = untrack(entries);
-      const keep = prev?.target.remote === target.remote && prev.target.path === target.path ? prev.items : [];
-      setEntries({ target, items: keep, loading: false, error: errorMessage(cause) });
-    }
-  }
+  const quotaSource = createMemo(() => connected() && selection() || false);
+  createEffect(() => { void listing.load(request()); });
+  createEffect(() => { void quota.load(quotaSource()); });
 
-  async function loadQuota(name: string, force = false): Promise<void> {
-    const seq = ++quotaSeq;
-    const cached = force ? undefined : cache.peekQuota(name);
-    if (cached) {
-      setQuota({ name, value: cached.value, loading: !cached.fresh, error: '' });
-      if (cached.fresh) return;
-    } else {
-      const prev = untrack(quota);
-      setQuota({ name, value: prev?.name === name ? prev.value : null, loading: true, error: '' });
-    }
-    try {
-      const value = await cache.loadQuota(name, () => window.api.quota(name), { force: force || !!cached });
-      if (seq === quotaSeq) setQuota({ name, value, loading: false, error: '' });
-    } catch (cause) {
-      if (seq !== quotaSeq) return;
-      const prev = untrack(quota);
-      setQuota({ name, value: prev?.name === name ? prev.value : null, loading: false, error: errorMessage(cause) });
-    }
-  }
-
-  createEffect(() => {
-    const target = request();
-    if (!target) {
-      listingSeq += 1;
-      setEntries(undefined);
-      return;
-    }
-    void loadListing(target);
-  });
-
-  const quotaSource = createMemo(() => connected() && selection());
-  createEffect(() => {
-    const name = quotaSource();
-    if (!name) {
-      quotaSeq += 1;
-      setQuota(undefined);
-      return;
-    }
-    void loadQuota(name);
-  });
-
-  const currentQuota = () => quota()?.name === selection() ? quota() : undefined;
-  const current = () => {
-    const state = entries();
-    const target = request();
-    return state && target && state.target.remote === target.remote && state.target.path === target.path ? state : undefined;
-  };
+  const currentQuota = () => quota.current(quotaSource());
+  const current = () => listing.current(request());
   const listingLoading = () => current()?.loading ?? false;
-  const items = createMemo(() => current()?.items);
+  const items = createMemo(() => current()?.value);
   const sorted = createMemo(() => sortEntries(items() ?? [], sort()));
   const filtered = createMemo(() => {
     const query = filter().toLowerCase();
@@ -264,8 +204,8 @@ function BrowserSession(props: PageProps) {
     if (disposed || !sameSession()) return;
     const target = untrack(request);
     if (!target) return;
-    if (withQuota) void loadQuota(target.remote, true);
-    await loadListing(target, true);
+    if (withQuota) void quota.load(target.remote, true);
+    await listing.load(target, true);
   };
 
   function newFolder() {
@@ -407,7 +347,7 @@ function BrowserSession(props: PageProps) {
               </tbody>
             </table>
           </div>
-          <Show when={listingLoading() && !current()?.items.length}><p class="empty" role="status">Loading files…</p></Show>
+          <Show when={listingLoading() && !items()?.length}><p class="empty" role="status">Loading files…</p></Show>
           <Show when={current()?.error}>{(error) => <p class="banner error" role="alert">{error()}</p>}</Show>
           <Show when={current() && !current()?.error && !listingLoading() && !filtered().length}><Empty>{filter() ? 'No matching files.' : 'This folder is empty.'}</Empty></Show>
           <Feedback action={action} />

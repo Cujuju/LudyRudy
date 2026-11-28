@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
+import { createRoot } from 'solid-js';
 import type { RemoteEntry, RemoteQuota } from '@shared/types';
 import { editedRemotePath, parentRemotePath, remotePath } from '@shared/remotePath';
-import { createBrowserCache } from './browserCache';
+import { createBrowserCache, createBrowserRequest } from './browserCache';
 
 const entry = (name: string): RemoteEntry => ({
   path: name, name, size: 128, mimeType: 'text/plain', modTime: '2026-01-01T00:00:00Z', isDir: false,
@@ -9,6 +10,70 @@ const entry = (name: string): RemoteEntry => ({
 
 const quota = (used: number): RemoteQuota => ({
   total: 1000, used, free: 1000 - used, trashed: 0, other: 0,
+});
+
+describe('Browser requests', () => {
+  it('shows stale data, shares revalidation, and retains the preview when a request fails', async () => {
+    let now = 0;
+    let reject!: (error: Error) => void;
+    const cache = createBrowserCache({ now: () => now, quotaFreshMs: 10 });
+    const loadQuota = vi.fn(() => new Promise<RemoteQuota>((_resolve, fail) => { reject = fail; }));
+    const { request, dispose } = createRoot((dispose) => ({
+      dispose, request: createBrowserRequest({
+        key: (name: string) => name,
+        peek: cache.peekQuota,
+        fetch: (name, force) => cache.loadQuota(name, loadQuota, { force }),
+      }, () => true),
+    }));
+    try {
+      await cache.loadQuota('drive', async () => quota(200));
+      now = 11;
+      const first = request.load('drive');
+      const second = request.load('drive');
+      expect(request.current('drive')).toMatchObject({ value: quota(200), loading: true });
+      expect(loadQuota).toHaveBeenCalledOnce();
+      reject(new Error('Unavailable'));
+      await Promise.all([first, second]);
+      expect(request.current('drive')).toMatchObject({ value: quota(200), loading: false, error: 'Unavailable' });
+    } finally {
+      dispose();
+    }
+  });
+
+  it('ignores obsolete results after navigation, invalidation, deselection and disposal', async () => {
+    const cache = createBrowserCache();
+    const pending: ((entries: RemoteEntry[]) => void)[] = [];
+    const { request, dispose } = createRoot((dispose) => ({
+      dispose, request: createBrowserRequest({
+        key: (path: string) => path,
+        peek: () => undefined,
+        fetch: (path, force) => cache.loadDirectory('drive', path, () =>
+          new Promise<RemoteEntry[]>((resolve) => pending.push(resolve)), { force }),
+      }, () => true),
+    }));
+    const first = request.load('first');
+    const old = request.load('second');
+    cache.invalidateDirectory('drive', 'second');
+    const refreshed = request.load('second', true);
+    pending[2]!([entry('fresh')]);
+    await refreshed;
+    pending[0]!([entry('wrong folder')]);
+    pending[1]!([entry('stale')]);
+    await Promise.all([first, old]);
+    expect(request.current('first')).toBeUndefined();
+    expect(request.current('second')?.value).toEqual([entry('fresh')]);
+    expect(cache.peekDirectory('drive', 'second')?.items).toEqual([entry('fresh')]);
+    const deselected = request.load('third');
+    await request.load(false);
+    pending[3]!([entry('late')]);
+    await deselected;
+    expect(request.current('third')).toBeUndefined();
+    const disposed = request.load('fourth');
+    dispose();
+    pending[4]!([entry('late')]);
+    await disposed;
+    expect(request.current('fourth')?.value).toBeUndefined();
+  });
 });
 
 describe('browserCache', () => {
