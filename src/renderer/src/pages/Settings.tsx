@@ -26,7 +26,9 @@ function General(props: PageProps) {
       <SectionHeader title="Window behavior" />
       <div class="settings-body">
         <For each={WINDOW_OPTIONS}>{(item) => (
-          <Toggle label={item.label} checked={general()[item.key]} onChange={(value) => void props.store.updateGeneral({ [item.key]: value })} />
+          <Show when={item.key !== 'launchAtLogin' || props.store.launchAtLoginSupported()}>
+            <Toggle label={item.label} checked={general()[item.key]} onChange={(value) => void props.store.updateGeneral({ [item.key]: value })} />
+          </Show>
         )}</For>
       </div>
     </section>

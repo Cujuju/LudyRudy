@@ -27,7 +27,7 @@ export interface DesktopApi {
   arch: string;
   hourCycle: HourCycle;
   noticeOverlaySupported: boolean;
-  initialize(): Promise<{ settings: AppSettings; build: BuildInfo; snapshot: AppSnapshot; maximized: boolean }>;
+  initialize(): Promise<{ settings: AppSettings; build: BuildInfo; snapshot: AppSnapshot; launchAtLoginSupported: boolean; maximized: boolean }>;
   refresh(): Promise<AppSnapshot>;
   updateGeneral(patch: Partial<AppSettings['general']>): Promise<AppSettings>;
   updateNotifications(patch: Partial<AppSettings['notifications']>): Promise<AppSettings>;

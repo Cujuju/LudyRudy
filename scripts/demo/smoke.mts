@@ -28,9 +28,9 @@ export async function smoke(): Promise<string[]> {
     page.on('Page.loadEventFired', () => { reloaded = true; });
     await page.send('Page.reload');
     await until('instrumented renderer reload', () => Promise.resolve(reloaded || null), abort);
-    await until('live rclone data', () => matches(`window.api.initialize().then(({snapshot}) => {
+    await until('live rclone data', () => matches(`window.api.initialize().then(({snapshot, launchAtLoginSupported}) => {
       const vault = snapshot.remotes.find((remote) => remote.name === 'gdrive-vault');
-      return snapshot.daemon.attached && snapshot.daemon.endpoint === ${JSON.stringify(new URL(app.daemon.endpoint).href)} &&
+      return launchAtLoginSupported === false && snapshot.daemon.attached && snapshot.daemon.endpoint === ${JSON.stringify(new URL(app.daemon.endpoint).href)} &&
         snapshot.mounts.some((mount) => mount.mountPoint === ${JSON.stringify(VAULT_MOUNT)} && mount.profileId === 'personal-vault') &&
         snapshot.stats?.bytes === 768 * 1024 ** 2 && vault?.isCrypt && vault.targetRemote === 'gdrive' &&
         vault.targetPath === 'vault' && ${JSON.stringify(EXPECTED_REMOTES)}.every(
@@ -256,6 +256,11 @@ async function verifyUi(page: Cdp, abort: () => string | null) {
   await contains('No log entries in this view.');
 
   await openPage(page, 'Settings', abort);
+  await click('General');
+  await contains('Start minimized');
+  if (await page.eval("document.querySelector('main')?.textContent?.includes('Launch at login')")) {
+    throw new Error('Launch at login is unavailable in the demo profile.');
+  }
   await click('Appearance');
   await contains('System', '.theme-grid');
   await click('Daemon & Security');
