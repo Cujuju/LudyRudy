@@ -123,7 +123,7 @@ export function registerIpc({ daemon, mounts, jobs, auth, remotes, current, refr
   invoke('unmount', mutate(mounts.unmount));
   invoke('unmountAll', mutate(mounts.unmountAll));
   invoke('revealMount', mounts.revealMount);
-  invoke('mountTypes', async () => (await daemon.client().call('mount/types')).mountTypes ?? []);
+  invoke('mountTypes', () => daemon.client().mountTypes());
   invoke('listVfs', async () => {
     const windows = daemon.current().daemon.hostPlatform === 'win32';
     return ((await daemon.client().call('vfs/list')).vfses ?? []).map((fs) => describeFs(fs, windows).display);

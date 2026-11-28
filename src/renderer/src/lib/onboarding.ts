@@ -1,4 +1,5 @@
 import type { AppSnapshot } from '@shared/ipc';
+import { mountTypeAvailable, NFS_MOUNT } from '@shared/mountCapabilities';
 import type { DaemonStatus } from '@shared/types';
 
 export type OnboardingStepId = 'engine' | 'remote' | 'use';
@@ -60,7 +61,7 @@ function remoteStep(daemon: DaemonStatus, remoteCount: number): OnboardingStep {
 function useStep(snapshot: AppSnapshot, hasRemotes: boolean): OnboardingStep {
   const step = { id: 'use', title: 'Mount a drive or browse files' } as const;
   const backend = snapshot.prereqs.mountBackend;
-  const canMount = snapshot.daemon.attached || backend.available;
+  const canMount = snapshot.daemon.attached || backend.available || mountTypeAvailable(snapshot.daemon, false, NFS_MOUNT);
   if (!hasRemotes) {
     if (!canMount && backend.installUrl) {
       return {

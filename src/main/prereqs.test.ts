@@ -17,7 +17,7 @@ describe('mount prerequisite detection', () => {
     const macFuse = '/Library/Filesystems/osxfuse.fs';
     expect(detect('darwin', [macFuse])).toMatchObject({ available: true, name: 'macFUSE' });
     expect(detect('darwin', [macFuse, '/opt/homebrew/bin/go-nfsv4']).details).toContain('FUSE-T and macFUSE');
-    expect(detect('darwin', [])).toMatchObject({ available: false, name: 'FUSE-T', details: expect.stringContaining('nfsmount') });
+    expect(detect('darwin', [])).toMatchObject({ available: false, name: 'FUSE-T' });
   });
 
   it('detects WinFsp using either Program Files location and its DLL or bin directory', () => {

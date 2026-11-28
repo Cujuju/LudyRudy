@@ -26,7 +26,7 @@ export function mountBackend(platform = process.platform, exists: (path: string)
     const installed = [fuseT && 'FUSE-T', macFuse && 'macFUSE'].filter(Boolean).join(' and ');
     return {
       available: fuseT || macFuse, name: fuseT || !macFuse ? 'FUSE-T' : 'macFUSE',
-      details: `${installed ? `Detected ${installed}.` : 'FUSE-T is available without a kernel extension.'} The rclone nfsmount command is also available on macOS.`,
+      details: installed ? `Detected ${installed}.` : 'FUSE-T is available without a kernel extension.',
       installUrl: fuseT || !macFuse ? 'https://www.fuse-t.org/' : 'https://macfuse.io/',
     };
   }

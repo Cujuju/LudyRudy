@@ -1,6 +1,7 @@
 import { For, Show, untrack } from 'solid-js';
 import { Activity, ExternalLink, HardDrive, Plus } from 'lucide-solid';
 import type { ActiveMount, MountProfile } from '@shared/types';
+import { mountTypeAvailable, NFS_MOUNT } from '@shared/mountCapabilities';
 import type { PageProps } from '../store';
 import { useAction } from '../lib/actions';
 import { formatSpeed } from '../lib/format';
@@ -28,8 +29,10 @@ export function Prerequisites(props: PageProps & { mountingOnly?: boolean }) {
   const action = useAction();
   const prereqs = () => props.store.snapshot()?.prereqs;
   const backend = () => prereqs()?.mountBackend;
+  const daemon = () => props.store.snapshot()?.daemon;
+  const builtInNfs = () => daemon()?.mode === 'managed' && mountTypeAvailable(daemon(), false, NFS_MOUNT);
   const binaryMissing = () => !props.mountingOnly && prereqs()?.rcloneInstalled === false;
-  const backendMissing = () => backend()?.available === false;
+  const backendMissing = () => backend()?.available === false && !builtInNfs();
   return (
     <Show when={prereqs()}>
       <div class="prerequisites" classList={{ warning: binaryMissing() || backendMissing() }}>
@@ -37,7 +40,8 @@ export function Prerequisites(props: PageProps & { mountingOnly?: boolean }) {
           <strong>{binaryMissing() || backendMissing() ? 'Local setup' : 'Local prerequisites ready'}</strong>
           <p class="secondary">{[
             !props.mountingOnly && (binaryMissing() ? 'rclone binary missing' : 'rclone installed'),
-            backendMissing() ? `${backend()?.name} missing` : `${backend()?.name} detected`,
+            backend()?.available ? `${backend()?.name} detected`
+              : builtInNfs() ? 'Built-in NFS is available in the mount profile' : `${backend()?.name} missing`,
           ].filter(Boolean).join('. ')}.</p>
         </div>
         <div class="actions">
@@ -64,7 +68,7 @@ function MountRow(props: MountProps & { profile?: MountProfile; external?: Activ
   const transferSpeed = () => activeTransfers().reduce((sum, item) => sum + item.speed, 0);
   const daemon = () => props.store.snapshot()?.daemon;
   const canMount = () => daemon()?.state === 'running' && !!daemon()?.hostPlatform && !!remote()
-    && (props.store.snapshot()?.daemon.attached || props.store.snapshot()?.prereqs.mountBackend.available);
+    && mountTypeAvailable(daemon(), props.store.snapshot()?.prereqs.mountBackend.available ?? false, props.profile?.mountType);
   return (
     <article class="ledger-row" classList={{ 'compact-mount': !props.detailed }} data-mount={props.profile?.id}>
       <div class="ledger-heading">

@@ -1,9 +1,10 @@
-import { createMemo, createSignal, createUniqueId, For, Match, onMount, Show, Switch, untrack } from 'solid-js';
+import { createMemo, createSignal, createUniqueId, For, Match, Show, Switch, untrack } from 'solid-js';
 import { createStore, produce, unwrap } from 'solid-js/store';
 import { FolderOpen } from 'lucide-solid';
 import { CACHE_AGE_PRESETS, CACHE_SIZE_PRESETS, MOUNT_OPTION_CATALOG, type MountOption, type MountOptionMap, type MountOptionValue } from '@shared/mountOptions';
 import { VFS_CACHE_MODES, type DaemonStatus, type MountProfile, type RemoteSummary } from '@shared/types';
-import { useAction, useNativePicker } from '../lib/actions';
+import { defaultProfileMountType, mountTypeAvailable, NFS_MOUNT } from '@shared/mountCapabilities';
+import { useNativePicker } from '../lib/actions';
 import { remoteOptions } from '../lib/remotes';
 import { daemonHostLabel } from '../lib/platform';
 import { ProviderIcon } from './ProviderIcon';
@@ -113,7 +114,8 @@ export function mountDraft(name: string, remote: string, cache: MountProfile['vf
 }
 
 export function MountDrawer(props: {
-  profile?: MountProfile; remote?: string; remotes: RemoteSummary[]; cache: MountProfile['vfsCacheMode']; daemon?: DaemonStatus; close: () => void;
+  profile?: MountProfile; remote?: string; remotes: RemoteSummary[]; cache: MountProfile['vfsCacheMode']; daemon?: DaemonStatus;
+  backendAvailable: boolean; close: () => void;
 }) {
   const [draft, setDraft] = createStore(untrack(() => {
     const initial = props.profile ?? mountDraft(props.remote ?? '', props.remote ?? props.remotes[0]?.name ?? '', props.cache);
@@ -121,12 +123,12 @@ export function MountDrawer(props: {
   }));
   const [flags, setFlags] = createSignal(untrack(() => draft.extraFlags.join('\n')));
   const showRawFlags = untrack(() => draft.extraFlags.length > 0);
-  const [types, setTypes] = createSignal<string[]>([]);
   const action = useNativePicker();
   const selectedRemote = () => props.remotes.find(({ name }) => name === draft.remote);
-  const lookup = useAction();
   const platform = () => props.daemon?.hostPlatform;
-  const cannotSave = () => !draft.remote || !platform() || lookup.pending();
+  const selectedMountType = () => draft.mountType ?? (props.profile ? undefined : defaultProfileMountType(props.daemon, props.backendAvailable));
+  const cannotSave = () => !draft.remote || !platform() || (!props.profile && props.daemon?.mountTypes != null
+    && !mountTypeAvailable(props.daemon, props.backendAvailable, selectedMountType()));
   const remotes = createMemo(() => {
     const options = remoteOptions(props.remotes);
     if (draft.remote && !options.some(({ value }) => value === draft.remote)) {
@@ -135,19 +137,22 @@ export function MountDrawer(props: {
     return options;
   });
   const mountTypes = createMemo(() => {
-    const options = [{ value: '', label: 'Daemon default' }, ...types().map((type) => ({ value: type, label: type }))];
-    if (draft.mountType && !types().includes(draft.mountType)) options.push({ value: draft.mountType, label: draft.mountType });
-    return options;
+    const types = props.daemon?.mountTypes;
+    const selected = selectedMountType();
+    const options = ['', ...(types ?? [])];
+    if (selected && !options.includes(selected)) options.push(selected);
+    return options.map((value) => {
+      const label = value === NFS_MOUNT ? 'NFS (built-in)' : value || 'Daemon default';
+      const disabled = types != null && !mountTypeAvailable(props.daemon, props.backendAvailable, value || undefined);
+      return { value, label: disabled ? `${label} (unavailable)` : label, disabled };
+    });
   });
   const mountPointId = createUniqueId();
   const mountPointHint = () => platform() === 'win32' ? 'e.g. X:\\ or C:\\Mounts\\vault' : platform() ? 'e.g. /mnt/vault' : undefined;
-  onMount(() => {
-    if (props.daemon?.state === 'running') void lookup.run(async () => setTypes(await window.api.mountTypes()));
-  });
 
   async function save() {
     if (cannotSave()) return;
-    if (await action.run(() => untrack(() => window.api.saveMountProfile({ ...unwrap(draft), name: draft.name.trim(),
+    if (await action.run(() => untrack(() => window.api.saveMountProfile({ ...unwrap(draft), name: draft.name.trim(), mountType: selectedMountType(),
       extraFlags: flags().split('\n').map((flag) => flag.trim()).filter(Boolean) })))) props.close();
   }
 
@@ -197,7 +202,7 @@ export function MountDrawer(props: {
           </div>
           <Toggle label="Read-only" checked={draft.readOnly} onChange={(value) => setDraft('readOnly', value)} />
           <Toggle label="Mount at daemon startup" checked={draft.autoMount} onChange={(value) => setDraft('autoMount', value)} />
-          <label class="field">Mount type<Select label="Mount type" value={draft.mountType ?? ''} options={mountTypes()}
+          <label class="field">Mount type<Select label="Mount type" value={selectedMountType() ?? ''} options={mountTypes()}
             onChange={(value) => setDraft('mountType', value || undefined)} /></label>
           <AdvancedOptions mount={draft.mountOpts} vfs={draft.vfsOpts} platform={platform()} onChange={changeOption} />
           <details class="advanced" open={showRawFlags}>
@@ -205,7 +210,6 @@ export function MountDrawer(props: {
             <label class="field">Extra flags<textarea placeholder="One flag per line" value={flags()} onInput={(event) => setFlags(event.currentTarget.value)} /></label>
           </details>
         </fieldset>
-        <Feedback action={lookup} />
         <Feedback action={action} />
         <FormActions label="Save profile" busy={action.pending()} disabled={cannotSave()} close={props.close} />
       </form>
