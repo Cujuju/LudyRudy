@@ -95,6 +95,7 @@ export function RemoteDrawer(props: { store: AppStore; remote?: RemoteSummary; c
   const [parameters, setParameters] = createSignal<RemoteParameters>({});
   const values = createMemo(() => ({ ...props.remote?.config, ...parameters() }));
   const [catalogOpen, setCatalogOpen] = createSignal(false);
+  let moreProviders: HTMLButtonElement | undefined;
   const [session, setSession] = createSignal<AuthSession>();
   const lookup = useAction();
   const authAction = useAction();
@@ -199,7 +200,7 @@ export function RemoteDrawer(props: { store: AppStore; remote?: RemoteSummary; c
                       onClick={() => setCatalogOpen(true)}><ProviderIcon type={item().name} size="sm" />{providerName(item().name)}</button>
                   )}</Show>
                   <Show when={hasMore()}>
-                    <button type="button" class="button" disabled={authActive() || authComplete() || authAction.pending()}
+                    <button ref={moreProviders} type="button" class="button" disabled={authActive() || authComplete() || authAction.pending()}
                       onClick={() => setCatalogOpen(true)}>More…</button>
                   </Show>
                 </div>
@@ -253,7 +254,7 @@ export function RemoteDrawer(props: { store: AppStore; remote?: RemoteSummary; c
           disabled={cannotSave()} />
       </form>
       <Show when={catalogOpen()}>
-        <ProviderCatalogDialog providers={providers()} selected={kind()}
+        <ProviderCatalogDialog providers={providers()} selected={kind()} focusFallback={() => moreProviders}
           select={(next) => { select(next); setCatalogOpen(false); }} close={() => setCatalogOpen(false)} />
       </Show>
     </Drawer>

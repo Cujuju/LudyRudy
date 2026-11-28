@@ -1,4 +1,4 @@
-import { createSignal } from 'solid-js';
+import { createSignal, onCleanup } from 'solid-js';
 
 export const errorMessage = (cause: unknown) => cause instanceof Error ? cause.message : String(cause);
 
@@ -30,4 +30,20 @@ export function useAction() {
   }
 
   return { run, pending, message, error, clear };
+}
+
+export function useNativePicker() {
+  const action = useAction();
+  let disposed = false;
+  onCleanup(() => { disposed = true; });
+
+  function choose(pick: () => Promise<string | null>, apply: (path: string) => void | Promise<void>) {
+    return action.run(async () => {
+      const focused = document.activeElement;
+      if (focused instanceof HTMLElement) focused.blur();
+      const path = await pick();
+      if (!disposed && path) await apply(path);
+    });
+  }
+  return { ...action, choose };
 }

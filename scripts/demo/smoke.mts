@@ -116,11 +116,12 @@ async function verifyUi(page: Cdp, abort: () => string | null, daemon: {
     `document.querySelector(${JSON.stringify(scope)})?.textContent.includes(${JSON.stringify(label)})`,
   )) || null, abort);
   const flyout = ':popover-open .cujuju-select-flyout-panel';
-  const escape = async () => {
+  const key = async (name: 'Escape' | 'Tab', modifiers = 0) => {
     for (const type of ['keyDown', 'keyUp']) {
-      await page.send('Input.dispatchKeyEvent', { type, key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+      await page.send('Input.dispatchKeyEvent', { type, key: name, code: name, windowsVirtualKeyCode: name === 'Escape' ? 27 : 9, modifiers });
     }
   };
+  const escape = () => key('Escape');
 
   await openPage(page, 'Dashboard', abort);
   const sidebarExpanded = (value: boolean) => until('sidebar toggle', async () => (await page.eval<boolean>(
@@ -202,16 +203,37 @@ async function verifyUi(page: Cdp, abort: () => string | null, daemon: {
   await click('Close drawer', 'dialog[open]');
   await click('Add remote');
   await until('provider picker', async () => (await page.eval<boolean>(`!!document.querySelector('dialog [aria-label="Popular providers"]')`)) || null, abort);
+  const catalogTrigger = `Array.from(document.querySelectorAll('dialog.drawer button')).find((button) => button.textContent.trim() === 'More…')`;
+  await page.eval(`${catalogTrigger}.focus()`);
   await click('More…', 'dialog[open]');
   await until('provider catalog dialog', async () => (await page.eval<boolean>(`(() => {
-    const items = [...document.querySelectorAll('.modal-dialog .provider-catalog-item strong')].map((el) => el.textContent.trim());
+    const catalog = document.querySelector('.modal-dialog:modal');
+    if (document.activeElement !== catalog?.querySelector('input[type=search]')) return false;
+    const items = [...catalog.querySelectorAll('[role=group] .provider-catalog-item strong')].map((el) => el.textContent.trim());
     return items.length >= 13 && items.every((label, i) => i === 0 || items[i - 1].localeCompare(label, undefined, { sensitivity: 'base' }) <= 0);
   })()`)) || null, abort);
+  const shiftModifier = 8;
+  for (let tab = 0; tab < 2; tab += 1) {
+    await key('Tab', shiftModifier);
+    if (await page.eval<boolean>(`document.activeElement?.closest('dialog') !== document.querySelector('.modal-dialog')`)) {
+      throw new Error('Reverse Tab moved focus outside the provider catalog.');
+    }
+  }
   await escape();
   await until('Escape closes only provider catalog', async () => (await page.eval<boolean>(
-    `!document.querySelector('.modal-dialog') && !!document.querySelector('dialog.drawer[open]')`,
+    `!document.querySelector('.modal-dialog') && document.activeElement === ${catalogTrigger}`,
   )) || null, abort);
-  await click('SFTP', 'dialog[open]');
+  const selectCatalogProvider = (name: string) => page.eval(`[...document.querySelectorAll('.modal-dialog .provider-catalog-item')]
+    .find((button) => button.querySelector('strong')?.textContent === ${JSON.stringify(name)}).click()`);
+  await click('More…', 'dialog[open]');
+  await selectCatalogProvider('Memory');
+  await page.eval(`[...document.querySelectorAll('dialog.drawer .provider-picker button')]
+    .find((button) => button.textContent.trim() === 'Memory').focus()`);
+  await click('Memory', 'dialog[open]');
+  await selectCatalogProvider('SFTP');
+  await until('provider selection restores focus when its trigger disappears', async () => (await page.eval<boolean>(
+    `!document.querySelector('.modal-dialog') && document.activeElement === ${catalogTrigger}`,
+  )) || null, abort);
   await contains('Advanced options', 'dialog[open]');
   await until('SFTP endpoint row', async () => (await page.eval<boolean>(
     `document.querySelectorAll('dialog .endpoint-row input').length === 3 && document.querySelector('dialog .endpoint-row')?.textContent.includes('@') && document.querySelector('dialog .endpoint-row')?.textContent.includes(':')`,

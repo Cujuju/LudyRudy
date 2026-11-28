@@ -93,10 +93,6 @@ export function Drawer(props: { title: string; description?: string; busy?: bool
   );
 }
 
-export function blurActiveElement() {
-  if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
-}
-
 export function Select<T extends string>(props: {
   id?: string; label: string; value: T; options: readonly { value: T; label: string; disabled?: boolean; icon?: () => JSX.Element }[];
   placeholder?: string; disabled?: boolean; onChange: (value: T) => void;
