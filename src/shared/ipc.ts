@@ -58,9 +58,9 @@ export interface DesktopApi {
   saveMountProfile(draft: Omit<MountProfile, 'id' | 'vfsCacheMode'> & Partial<Pick<MountProfile, 'id' | 'vfsCacheMode'>>): Promise<MountProfile>;
   deleteMountProfile(id: string): Promise<void>;
   mountProfile(id: string): Promise<string>;
-  unmount(mountPoint: string): Promise<void>;
+  unmount(mountId: string): Promise<void>;
   unmountAll(): Promise<void>;
-  revealMount(mountPoint: string): Promise<void>;
+  revealMount(mountId: string): Promise<void>;
   mountTypes(): Promise<string[]>;
   listVfs(): Promise<string[]>;
   vfsStats(remote: string, path?: string): Promise<{ inUse: number; files: number; dirs: number }>;

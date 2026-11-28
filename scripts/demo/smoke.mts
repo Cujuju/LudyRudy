@@ -73,7 +73,9 @@ export async function smoke(): Promise<string[]> {
       await api.vfsStats('smoke-files');
       await api.vfsRefresh('smoke-files');
       await api.vfsForget('smoke-files');
-      await api.unmount(mounted);
+      const activeMount = (await api.refresh()).mounts.find((entry) => entry.mountPoint === mounted);
+      if (!activeMount) return false;
+      await api.unmount(activeMount.id);
       await api.deleteMountProfile(profile.id);
       const job = await api.saveJob({ name: 'Smoke', mode: 'copy', source: 'gdrive:', destination: 'smoke-files:',
         excludes: [], dryRunDefault: true, enabled: true });
