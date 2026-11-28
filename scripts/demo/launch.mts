@@ -22,11 +22,11 @@ export async function launchDemo({ theme = DEFAULT_THEME, debuggingPort }: { the
     const server = await startDemoRclone();
     daemon = server;
     const { endpoint, auth } = server;
-    const env = { ...process.env };
+    const env: NodeJS.ProcessEnv = { ...process.env, LUDYRUDY_RCLONE_AUTH: auth };
     delete env.ELECTRON_RUN_AS_NODE;
     delete env.ELECTRON_RENDERER_URL;
     const electron = createRequire(import.meta.url)('electron') as string;
-    const args = [ROOT, `--user-data-dir=${profile}`, `--rclone-endpoint=${endpoint}`, `--rclone-auth=${auth}`];
+    const args = [ROOT, `--user-data-dir=${profile}`, `--rclone-endpoint=${endpoint}`];
     if (process.platform === 'darwin') args.push('--use-mock-keychain');
     if (debuggingPort) args.push(`--remote-debugging-port=${debuggingPort}`);
     const child = spawn(electron, args, { cwd: ROOT, env, stdio: 'inherit' });

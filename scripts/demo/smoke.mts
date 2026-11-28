@@ -40,6 +40,9 @@ export async function smoke(): Promise<string[]> {
     await verifyUi(page, abort, app.daemon.replaceTransferHistory);
     const verified = await page.eval<boolean>(`(async () => {
       const api = window.api;
+      const badOverride = await api.updateDaemon({ binaryPath: ${JSON.stringify(import.meta.dirname)} })
+        .then(() => false, (error) => error.message.includes('executable rclone binary'));
+      if (!badOverride || (await api.initialize()).settings.daemon.binaryPath) return false;
       const vaultFiles = await api.browse('gdrive-vault', '');
       if (vaultFiles.find(({ name }) => name === 'journal.txt')?.encrypted !== 'encrypted-journal') return false;
       const mountPoint = '${process.platform === 'win32' ? 'Z:/' : '/demo/smoke'}';

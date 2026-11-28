@@ -1,3 +1,4 @@
+import { isIP } from 'node:net';
 import type { ActiveMount, CompletedTransfer, RemoteParameters, RemoteEntry, RemoteQuota, RemoteSummary, TransferStats, MountProfile } from '@shared/types';
 
 export interface RcItem {
@@ -122,7 +123,12 @@ export class RcloneClient {
     if (!url || !['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash) {
       throw new Error('Use an HTTP(S) rclone endpoint without embedded credentials, query, or fragment.');
     }
-    if (auth && auth.indexOf(':') < 1) throw new Error('--rclone-auth requires user:password.');
+    if (auth !== undefined) {
+      if (auth.indexOf(':') < 1) throw new Error('rclone credentials require a username and password separated by a colon.');
+      const host = url.hostname;
+      const loopback = host === 'localhost' || host === '[::1]' || (isIP(host) === 4 && host.startsWith('127.'));
+      if (url.protocol === 'http:' && !loopback) throw new Error('Use HTTPS for authenticated rclone endpoints outside loopback.');
+    }
     url.pathname = url.pathname.replace(/\/*$/, '/');
     this.endpoint = url.href;
     this.headers = new Headers({ 'Content-Type': 'application/json' });

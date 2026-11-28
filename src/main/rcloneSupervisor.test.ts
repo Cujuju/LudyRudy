@@ -88,6 +88,15 @@ describe('RcloneSupervisor', () => {
     expect(fetch.mock.calls.some(([url]) => /quit|unmount/.test(String(url)))).toBe(false);
   });
 
+  it('does not send CLI credentials to a settings-only endpoint', async () => {
+    mocks.argument.mockImplementation((name) => name === '--rclone-auth' ? `review:${crypto.randomUUID()}` : undefined);
+    mocks.settings.mockReturnValue(normalizeSettings({ daemon: { endpoint: 'http://localhost:4321' } }));
+    const fetch = fixture();
+    const daemon = openDaemon();
+    await expect(daemon.start()).rejects.toThrow('require an explicit --rclone-endpoint');
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
   it('passes credentials via environment, publishes safe logs, and unmounts before quitting', async () => {
     const child = new FakeChild();
     const rcloneConfigSecret = crypto.randomUUID();

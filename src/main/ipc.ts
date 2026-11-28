@@ -8,7 +8,8 @@ import { setConfigPassword } from './configPassword';
 import type { openJobManager } from './jobManager';
 import type { openMountManager } from './mountManager';
 import { nativeFiles, remotePath } from './nativeFiles';
-import { supportsLaunchAtLogin } from './paths';
+import { resolveRclone, supportsLaunchAtLogin } from './paths';
+import { localVersion } from './prereqs';
 import { describeFs, NO_CLOBBER, RcloneClient, remoteFs } from './rcloneClient';
 import { managedPaths, type RcloneSupervisor } from './rcloneSupervisor';
 import type { RcloneAuth } from './rcloneAuth';
@@ -67,7 +68,11 @@ export function registerIpc({ daemon, mounts, jobs, auth, remotes, current, refr
     for (const path of [config.binaryPath, config.configPath, config.defaultCacheDir]) {
       if (path && (typeof path !== 'string' || !isAbsolute(path) || path.includes('\0'))) throw new Error('Use an absolute path.');
     }
-    const settings = updateSettings({ daemon: config });
+    if (patch.binaryPath && !await localVersion(resolveRclone(patch.binaryPath).binaryPath)) {
+      throw new Error('The custom path does not point to an executable rclone binary.');
+    }
+    if (isQuitting()) throw new Error('The app is shutting down.');
+    const settings = updateSettings({ daemon: { ...getSettings().daemon, ...patch } });
     if (patch.binaryPath !== undefined || patch.configPath !== undefined) {
       await daemon.refreshLocal();
       await refresh();

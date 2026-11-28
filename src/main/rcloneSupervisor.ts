@@ -13,6 +13,10 @@ import { RcloneClient, remoteFs, validRemoteName } from './rcloneClient';
 import { getSettings, readConfigPassword } from './settingsStore';
 import { createSerialQueue } from './serialQueue';
 
+const ATTACHED_AUTH_ENV = 'LUDYRUDY_RCLONE_AUTH';
+const attachedAuthFromEnvironment = process.env[ATTACHED_AUTH_ENV];
+delete process.env[ATTACHED_AUTH_ENV];
+
 const LOOPBACK = '127.0.0.1';
 const RC_CREDENTIAL_BYTES = 32;
 const START_TIMEOUT_MS = 8_000;
@@ -228,12 +232,18 @@ export function openDaemon(hooks: Hooks = {}) {
       configEncrypted: null, configPath: config.configPath || null });
     try {
       if (endpoint !== undefined) {
-        rc = new RcloneClient(endpoint, argument('--rclone-auth'));
+        const auth = attachedAuthFromEnvironment ?? argument('--rclone-auth');
+        if (auth !== undefined && argument('--rclone-endpoint') === undefined) {
+          throw new Error('Attached rclone credentials require an explicit --rclone-endpoint.');
+        }
+        rc = new RcloneClient(endpoint, auth);
         status({ endpoint: rc.endpoint });
         await collect(rc);
         return;
       }
-      if (!binary.binaryPath) throw new Error('The rclone executable could not be found.');
+      if (!binary.binaryPath) {
+        throw new Error(config.binaryPath ? 'The custom rclone executable is unavailable.' : 'The rclone executable could not be found.');
+      }
       const { cacheDir, configPath } = managedPaths(config);
       await Promise.all([mkdir(dirname(configPath), { recursive: true }), mkdir(cacheDir, { recursive: true })]);
       const encrypted = await configEncrypted(configPath);
