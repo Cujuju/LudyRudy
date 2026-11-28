@@ -257,6 +257,15 @@ async function verifyUi(page: Cdp, abort: () => string | null, daemon: {
   await page.send('Emulation.clearDeviceMetricsOverride');
   if (!drawerScrolls) throw new Error('Drawer overflowed the viewport or failed to scroll.');
   await click('Close drawer', 'dialog[open]');
+  await page.eval(`[...document.querySelectorAll('.ledger-row .remote-actions button')]
+    .find((button) => button.textContent === 'Edit' && button.closest('.ledger-row').querySelector('strong')?.textContent === 'nas-sftp').click()`);
+  await until('SFTP edit projects configured port and boolean while keeping its host write-only', async () => (await page.eval<boolean>(`(() => {
+    const drawer = document.querySelector('dialog[aria-label="Edit remote"]');
+    return drawer?.querySelector('.endpoint-row input.numeric')?.value === '2222'
+      && drawer.querySelector('.endpoint-row input.path')?.value === ''
+      && [...drawer.querySelectorAll('label')].find((label) => label.textContent === 'key_use_agent')?.querySelector('input')?.checked;
+  })()`)) || null, abort);
+  await click('Close drawer', 'dialog[open]');
 
   await openPage(page, 'Browser', abort);
   const placeholderVisible = await page.eval<boolean>(`(() => {

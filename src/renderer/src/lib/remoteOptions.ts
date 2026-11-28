@@ -1,4 +1,4 @@
-export type ProviderOptionSpec = Record<string, unknown>;
+import type { ProviderOptionSpec, RemoteParameters } from '@shared/types';
 
 export interface EndpointOptions {
   user: ProviderOptionSpec;
@@ -12,31 +12,42 @@ export interface GroupedProviderOptions {
   advanced: ProviderOptionSpec[];
 }
 
-export function isSecretOption(option: ProviderOptionSpec): boolean {
-  return option.IsPassword === true || /secret|password|token|pass$|private_key/i.test(String(option.Name));
+export function optionValue(option: ProviderOptionSpec, values: RemoteParameters) {
+  return (Object.hasOwn(values, option.name) ? values[option.name] : undefined) ?? option.defaultValue;
 }
 
-export function isBooleanOption(option: ProviderOptionSpec): boolean {
-  return option.Type === 'bool' || typeof option.Default === 'boolean';
+export function providerVariant(fields: readonly ProviderOptionSpec[], values: RemoteParameters): string {
+  const option = fields.find(({ name }) => name === 'provider');
+  return option ? String(optionValue(option, values) ?? '') : '';
+}
+
+function matchesProvider(filter: string | undefined, provider: string): boolean {
+  if (!filter || !provider) return true;
+  return filter.startsWith('!')
+    ? !filter.slice(1).split(',').includes(provider)
+    : filter.split(',').includes(provider);
+}
+
+export function visibleProviderOptions(fields: readonly ProviderOptionSpec[], provider: string): ProviderOptionSpec[] {
+  return fields.filter((option) => option.name !== 'token' && matchesProvider(option.provider, provider));
 }
 
 export function requiresOptionValue(option: ProviderOptionSpec): boolean {
-  return option.Required === true && (option.Default === undefined || option.Default === '');
+  return option.required === true && (option.defaultValue === undefined || option.defaultValue === '');
 }
 
-export function optionChoiceExamples(option: ProviderOptionSpec): { Value: string; Help: string }[] {
-  return option.Exclusive === true && Array.isArray(option.Examples) && !isSecretOption(option) && !isBooleanOption(option)
-    ? option.Examples as { Value: string; Help: string }[] : [];
+export function optionChoiceExamples(option: ProviderOptionSpec, provider: string) {
+  return option.choices?.filter((choice) => matchesProvider(choice.provider, provider)) ?? [];
 }
 
 function isPlainInput(option: ProviderOptionSpec): boolean {
-  return !isSecretOption(option) && !isBooleanOption(option) && optionChoiceExamples(option).length === 0;
+  return option.input === 'text' && !option.choices?.length;
 }
 
 export function groupProviderOptions(fields: readonly ProviderOptionSpec[]): GroupedProviderOptions {
-  const user = fields.find((option) => option.Name === 'user');
-  const host = fields.find((option) => option.Name === 'host');
-  const port = fields.find((option) => option.Name === 'port');
+  const user = fields.find((option) => option.name === 'user');
+  const host = fields.find((option) => option.name === 'host');
+  const port = fields.find((option) => option.name === 'port');
   const endpoint = user && host && port && isPlainInput(user) && isPlainInput(host) && isPlainInput(port)
     ? { user, host, port }
     : null;
@@ -45,7 +56,7 @@ export function groupProviderOptions(fields: readonly ProviderOptionSpec[]): Gro
     : fields;
   return {
     endpoint,
-    common: remaining.filter((option) => option.Advanced !== true || option.Required === true),
-    advanced: remaining.filter((option) => option.Advanced === true && option.Required !== true),
+    common: remaining.filter((option) => !option.advanced || option.required),
+    advanced: remaining.filter((option) => option.advanced && !option.required),
   };
 }

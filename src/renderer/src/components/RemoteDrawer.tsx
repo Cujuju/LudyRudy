@@ -1,14 +1,14 @@
 import { createMemo, createSignal, For, onCleanup, onMount, Show, untrack } from 'solid-js';
-import type { AuthSession, ProviderInfo, RemoteParameters, RemoteSummary } from '@shared/types';
+import type { AuthSession, ProviderOptionSpec, RemoteEditorData, RemoteParameters, RemoteSummary } from '@shared/types';
 import { useAction } from '../lib/actions';
 import {
   type EndpointOptions,
   groupProviderOptions,
-  isBooleanOption,
-  isSecretOption,
   optionChoiceExamples,
-  type ProviderOptionSpec,
+  optionValue,
+  providerVariant,
   requiresOptionValue,
+  visibleProviderOptions,
 } from '../lib/remoteOptions';
 import { providerName } from '../lib/remotes';
 import type { AppStore } from '../store';
@@ -16,35 +16,34 @@ import { ProviderCatalogDialog } from './ProviderCatalogDialog';
 import { ProviderIcon } from './ProviderIcon';
 import { Drawer, Empty, Feedback, FormActions, SecretInput, Select, Toggle } from './ui';
 
+const KEEP_SAVED_VALUE = 'Leave blank to keep the saved value';
+
 function EndpointRow(props: {
   endpoint: EndpointOptions;
   values: RemoteParameters;
   edit: boolean;
   update: (option: string, value: string) => void;
 }) {
-  const value = (option: ProviderOptionSpec) => {
-    const key = String(option.Name);
-    const current = props.values[key] ?? (props.edit ? undefined : option.Default);
-    return String(current ?? '');
-  };
+  const value = (option: ProviderOptionSpec) => String(optionValue(option, props.values) ?? '');
   const required = (option: ProviderOptionSpec) => !props.edit && requiresOptionValue(option);
+  const placeholder = (option: ProviderOptionSpec) => props.edit && option.sensitive ? KEEP_SAVED_VALUE : undefined;
   return (
     <div class="endpoint-row" role="group" aria-label="Connection address">
       <label class="field">
         <span>User</span>
-        <input required={required(props.endpoint.user)} value={value(props.endpoint.user)}
+        <input required={required(props.endpoint.user)} value={value(props.endpoint.user)} placeholder={placeholder(props.endpoint.user)}
           onInput={(event) => props.update('user', event.currentTarget.value)} />
       </label>
       <span class="endpoint-sep" aria-hidden="true">@</span>
       <label class="field">
         <span>Host</span>
-        <input class="path" required={required(props.endpoint.host)} value={value(props.endpoint.host)}
+        <input class="path" required={required(props.endpoint.host)} value={value(props.endpoint.host)} placeholder={placeholder(props.endpoint.host)}
           onInput={(event) => props.update('host', event.currentTarget.value)} />
       </label>
       <span class="endpoint-sep" aria-hidden="true">:</span>
       <label class="field">
         <span>Port</span>
-        <input class="numeric" inputMode="numeric" required={required(props.endpoint.port)} value={value(props.endpoint.port)}
+        <input class="numeric" inputMode="numeric" required={required(props.endpoint.port)} value={value(props.endpoint.port)} placeholder={placeholder(props.endpoint.port)}
           onInput={(event) => props.update('port', event.currentTarget.value)} />
       </label>
     </div>
@@ -52,48 +51,50 @@ function EndpointRow(props: {
 }
 
 function ProviderOption(props: {
-  option: ProviderOptionSpec; value: RemoteParameters[string] | undefined; edit: boolean; update: (value: string | boolean) => void;
+  option: ProviderOptionSpec; values: RemoteParameters; variant: string; edit: boolean; update: (value: string | boolean) => void;
 }) {
-  const name = () => String(props.option.Name);
-  const initial = () => props.option.Default;
-  const value = () => props.value ?? (props.edit ? undefined : initial());
+  const name = () => props.option.name;
+  const value = () => optionValue(props.option, props.values);
+  const text = () => String(value() ?? '');
   const required = () => !props.edit && requiresOptionValue(props.option);
-  const examples = () => optionChoiceExamples(props.option);
-  const selected = () => examples().some((example) => example.Value === String(value() ?? '')) ? String(value()) : '';
+  const examples = () => optionChoiceExamples(props.option, props.variant);
+  const placeholder = () => props.edit && props.option.sensitive ? KEEP_SAVED_VALUE : undefined;
   return (
     <div class="field">
-      <Show when={isSecretOption(props.option)} fallback={
-        <Show when={!isBooleanOption(props.option)} fallback={
-          <Toggle label={name()} checked={value() === true || value() === 'true'} onChange={props.update} />
+      <Show when={props.option.input === 'password'} fallback={
+        <Show when={props.option.input !== 'boolean'} fallback={
+          <Toggle label={name()} checked={/^(?:1|t|true)$/i.test(text())} onChange={props.update} />
         }>
           <label class="field">{name()}
             <Show when={examples().length} fallback={
-              <input required={required()} value={String(value() ?? '')} onInput={(event) => props.update(event.currentTarget.value)} />
+              <input required={required()} value={text()} placeholder={placeholder()} onInput={(event) => props.update(event.currentTarget.value)} />
             }>
-              <Select label={name()} value={selected()} onChange={props.update}
-                options={[{ value: '', label: 'Select an option' }, ...examples().map(({ Value, Help }) => ({
-                  value: Value, label: Help ? `${Value} / ${Help.split('\n')[0]}` : Value,
-                }))]} />
+              <Select label={name()} value={text()} onChange={props.update}
+                options={[{ value: '', label: 'Select an option' },
+                  ...(text() && !examples().some(({ value }) => value === text()) ? [{ value: text(), label: text() }] : []),
+                  ...examples().map(({ value, help }) => ({
+                    value, label: help ? `${value} / ${help.split('\n')[0]}` : value,
+                  }))]} />
             </Show>
           </label>
         </Show>
       }>
-        <SecretInput label={name()} value={String(props.value ?? '')} required={required()}
-          placeholder={props.edit ? 'Leave blank to keep the saved value' : undefined} onInput={props.update} />
+        <SecretInput label={name()} value={text()} required={required()} placeholder={placeholder()} onInput={props.update} />
       </Show>
-      <Show when={typeof props.option.Help === 'string' && props.option.Help}>
-        <small class="secondary">{String(props.option.Help).split('\n\n')[0]}</small>
+      <Show when={props.option.help}>
+        <small class="secondary">{props.option.help?.split('\n\n')[0]}</small>
       </Show>
     </div>
   );
 }
 
 export function RemoteDrawer(props: { store: AppStore; remote?: RemoteSummary; close: () => void }) {
-  const [providers, setProviders] = createSignal<ProviderInfo[]>([]);
+  const [editor, setEditor] = createSignal<RemoteEditorData>({ providers: [], values: {} });
+  const providers = () => editor().providers;
   const [name, setName] = createSignal(untrack(() => props.remote?.name ?? ''));
   const [kind, setKind] = createSignal(untrack(() => props.remote?.type ?? ''));
   const [parameters, setParameters] = createSignal<RemoteParameters>({});
-  const values = createMemo(() => ({ ...props.remote?.config, ...parameters() }));
+  const values = createMemo(() => ({ ...editor().values, ...parameters() }));
   const [catalogOpen, setCatalogOpen] = createSignal(false);
   let moreProviders: HTMLButtonElement | undefined;
   const [session, setSession] = createSignal<AuthSession>();
@@ -116,25 +117,27 @@ export function RemoteDrawer(props: { store: AppStore; remote?: RemoteSummary; c
     const current = provider();
     return current && !current.popular ? current : undefined;
   });
-  const fields = createMemo(() => (provider()?.options ?? []).filter((option) => option.Name !== 'token'
-    && (typeof option.Provider !== 'string' || !option.Provider || !values().provider
-      || option.Provider.startsWith('!') && !option.Provider.slice(1).split(',').includes(String(values().provider))
-      || option.Provider.split(',').includes(String(values().provider)))));
+  const options = createMemo(() => provider()?.options ?? []);
+  const variant = createMemo(() => providerVariant(options(), values()));
+  const fields = createMemo(() => visibleProviderOptions(options(), variant()));
   const grouped = createMemo(() => groupProviderOptions(fields()));
   const endpoint = () => grouped().endpoint;
   const common = () => grouped().common;
   const advanced = () => grouped().advanced;
   const missingRequiredChoice = () => !props.remote && fields().some((option) => {
     if (!requiresOptionValue(option)) return false;
-    const choices = optionChoiceExamples(option);
-    const value = String(values()[String(option.Name)] ?? '');
-    return choices.length > 0 && (!value || !choices.some((example) => example.Value === value));
+    const choices = optionChoiceExamples(option, variant());
+    const value = String(optionValue(option, values()) ?? '');
+    return choices.length > 0 && (!value || !choices.some((example) => example.value === value));
   });
   const cannotSave = () => !provider() || authActive() || authAction.pending() || missingRequiredChoice()
     || (!!provider()?.isOAuth && !props.remote && !authComplete());
 
   function load() {
-    void lookup.run(async () => setProviders(await window.api.listProviders()));
+    void lookup.run(async () => {
+      const remote = untrack(() => props.remote);
+      setEditor(await window.api.remoteEditor(remote ? { name: remote.name, type: remote.type } : undefined));
+    });
   }
   onMount(load);
   let disposed = false;
@@ -169,9 +172,9 @@ export function RemoteDrawer(props: { store: AppStore; remote?: RemoteSummary; c
     if (cannotSave()) return;
     if (await saveAction.run(() => untrack(() => {
       const cleaned = Object.fromEntries(fields().flatMap((option) => {
-        const key = String(option.Name);
+        const key = option.name;
         const value = parameters()[key];
-        return Object.hasOwn(parameters(), key) && (value !== '' || !isSecretOption(option)) ? [[key, value]] : [];
+        return Object.hasOwn(parameters(), key) && (value !== '' || !option.sensitive) ? [[key, value]] : [];
       })) as RemoteParameters;
       const id = authComplete() ? auth()?.id : undefined;
       const draft = { name: name().trim(), type: kind(), parameters: cleaned, ...(id ? { authSessionId: id } : {}) };
@@ -237,13 +240,13 @@ export function RemoteDrawer(props: { store: AppStore; remote?: RemoteSummary; c
             <EndpointRow endpoint={trio()} values={values()} edit={!!props.remote} update={change} />
           )}</Show>
           <For each={common()}>{(option) => (
-            <ProviderOption option={option} value={values()[String(option.Name)]} edit={!!props.remote} update={(value) => change(String(option.Name), value)} />
+            <ProviderOption option={option} values={values()} variant={variant()} edit={!!props.remote} update={(value) => change(option.name, value)} />
           )}</For>
           <Show when={advanced().length}>
             <details class="advanced"><summary>Advanced options</summary>
               <div class="form-stack">
                 <For each={advanced()}>{(option) => (
-                  <ProviderOption option={option} value={values()[String(option.Name)]} edit={!!props.remote} update={(value) => change(String(option.Name), value)} />
+                  <ProviderOption option={option} values={values()} variant={variant()} edit={!!props.remote} update={(value) => change(option.name, value)} />
                 )}</For>
               </div>
             </details>

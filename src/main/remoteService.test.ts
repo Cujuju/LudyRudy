@@ -9,10 +9,24 @@ const fixture = (dump: Record<string, Record<string, string>>) => {
     switch (new URL(String(input)).pathname) {
       case '/config/listremotes': return Response.json({ remotes: Object.keys(dump) });
       case '/config/dump': return Response.json(dump);
+      case '/config/get': return Response.json(dump.nas ?? {});
       case '/config/providers': return Response.json({ providers: [
         { Name: 'z-other', Prefix: 'other', Description: 'Other', Options: [] },
         { Name: 'crypt', Prefix: 'crypt', Description: 'Crypt', Options: [{ Name: 'password', IsPassword: true, Default: secret() }] },
         { Name: 'drive', Prefix: 'drive', Description: 'Drive', Options: [{ Name: 'token' }] },
+        { Name: 'sftp', Prefix: 'sftp', Description: 'SFTP', Options: [
+          { Name: 'user', Sensitive: true, Default: secret(), ValueStr: secret(), Examples: [{ Value: secret(), Help: secret() }], Exclusive: true },
+          { Name: 'pass', IsPassword: true, DefaultStr: secret() },
+          { Name: 'key_use_agent', Type: 'bool', Default: false },
+          { Name: 'port', Default: 22 },
+          { Name: 'idle_timeout', Type: 'Duration', Default: 60_000_000_000, DefaultStr: '1m0s' },
+          { Name: 'remote' },
+          { Name: 'url', Default: 'https://default.example.test/' },
+          { Name: 'headers' },
+          { Name: 'ibm_api_key' },
+          { Name: 'sse_customer_key' },
+          { Name: 'sse_customer_key_file' },
+        ] },
       ] });
       default: return Response.json({});
     }
@@ -44,9 +58,30 @@ describe('remote names and catalog', () => {
   it('prioritizes popular providers and removes password defaults', async () => {
     const { service } = fixture({});
     const providers = await service.listProviders();
-    expect(providers.map(({ name }) => name)).toEqual(['drive', 'crypt', 'z-other']);
+    expect(providers.map(({ name }) => name)).toEqual(['drive', 'crypt', 'sftp', 'z-other']);
     expect(providers[0]).toMatchObject({ popular: true, isOAuth: true });
-    expect(providers[1]?.options[0]).toEqual({ Name: 'password', IsPassword: true });
+    expect(providers[1]?.options[0]).toEqual({ name: 'password', input: 'password', sensitive: true });
+    expect(providers[2]?.options[0]).toEqual({ name: 'user', input: 'text', sensitive: true });
+    expect(providers[2]?.options).toContainEqual({ name: 'idle_timeout', input: 'text', defaultValue: '1m0s' });
+  });
+
+  it('projects only registered non-sensitive values from the actual saved provider', async () => {
+    const { service } = fixture({ nas: {
+      type: 'sftp', port: '2222', key_use_agent: 'true', user: secret(), pass: secret(),
+      unknown: secret(), url: `https://example.test/?token=${secret()}`,
+      remote: `drive,token=${secret()}:path`, headers: `Authorization,Bearer ${secret()}`,
+      ibm_api_key: secret(), sse_customer_key: secret(), sse_customer_key_file: '/path/to/key-file',
+    } });
+    const editor = await service.remoteEditor({ name: 'nas', type: 'sftp' });
+    expect(editor.providers.map(({ name }) => name)).toEqual(['sftp']);
+    expect(editor.values).toEqual({ port: '2222', key_use_agent: 'true', sse_customer_key_file: '/path/to/key-file' });
+    const options = editor.providers[0]?.options ?? [];
+    for (const name of ['url', 'remote', 'headers', 'ibm_api_key', 'sse_customer_key']) {
+      const option = options.find((field) => field.name === name);
+      expect(option?.sensitive).toBe(true);
+      expect(option?.defaultValue).toBeUndefined();
+    }
+    await expect(service.remoteEditor({ name: 'nas', type: 'drive' })).rejects.toThrow('The remote changed');
   });
 });
 

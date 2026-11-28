@@ -51,6 +51,7 @@ interface RcMethods {
   'core/bwlimit': [{ rate?: string }, { rate: string; bytesPerSecondTx?: number; bytesPerSecondRx?: number }];
   'config/listremotes': [NoParams, { remotes: string[] | null }];
   'config/dump': [NoParams, ConfigDump];
+  'config/get': [{ name: string }, Record<string, unknown>];
   'config/paths': [NoParams, { config: string; cache?: string }];
   'config/providers': [NoParams, { providers: Record<string, unknown>[] }];
   'config/create': [RcConfig & { type: string }, RcResult];
