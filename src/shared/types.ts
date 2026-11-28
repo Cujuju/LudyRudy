@@ -90,6 +90,7 @@ export interface MountProfile {
 }
 
 export interface ActiveMount {
+  id: string;
   profileId: string | null;
   fs: string;
   mountPoint: string;

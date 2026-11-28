@@ -77,7 +77,7 @@ describe('deriveOnboarding', () => {
     expect(deriveOnboarding({
       ...snapshot,
       remotes: [remote],
-      mounts: [{ profileId: null, fs: 'drive:', mountPoint: 'Z:\\', mountedOn: null, status: 'mounted' }],
+      mounts: [{ id: 'external', profileId: null, fs: 'drive:', mountPoint: 'Z:\\', mountedOn: null, status: 'mounted' }],
     }, 0)).toEqual({ show: false, canDismiss: false, steps: [] });
   });
 

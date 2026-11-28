@@ -92,9 +92,9 @@ function MountRow(props: MountProps & { profile?: MountProfile; external?: Activ
       <div class="actions mount-actions">
         <Show when={mount()} fallback={<button type="button" class="button" disabled={action.pending() || !canMount()}
           onClick={() => void action.run(() => untrack(() => window.api.mountProfile(props.profile!.id)), 'Drive mounted.')}>Mount drive</button>}>
-          <button type="button" class="button" disabled={action.pending()} onClick={() => void action.run(() => untrack(() => window.api.unmount(path())), 'Drive unmounted.')}>Unmount</button>
+          <button type="button" class="button" disabled={action.pending()} onClick={() => void action.run(() => untrack(() => window.api.unmount(mount()!.id)), 'Drive unmounted.')}>Unmount</button>
           <Show when={daemon()?.mode === 'managed'}>
-            <button type="button" class="button quiet" disabled={action.pending()} onClick={() => void action.run(() => untrack(() => window.api.revealMount(path())))}>Open folder</button>
+            <button type="button" class="button quiet" disabled={action.pending()} onClick={() => void action.run(() => untrack(() => window.api.revealMount(mount()!.id)))}>Open folder</button>
           </Show>
         </Show>
         <Show when={props.detailed && props.profile}>{(profile) => (

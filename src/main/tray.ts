@@ -23,8 +23,8 @@ export function createTray(daemon: RcloneSupervisor, mounts: ReturnType<typeof o
   let current = '';
   const click = (action: () => Promise<unknown>) => () => { void action().then(refresh, report); };
   return ({ daemon: { state }, mounts: active }: AppSnapshot, profiles: MountProfile[]) => {
-    const quickMounts = profiles.map(({ id, name, mountPoint }) => {
-      const mounted = active.find((mount) => mount.profileId === id || mount.mountPoint === mountPoint);
+    const quickMounts = profiles.map(({ id, name }) => {
+      const mounted = active.find((mount) => mount.profileId === id);
       return { id, name, mounted };
     });
     const signature = JSON.stringify([state, quickMounts]);
@@ -40,7 +40,7 @@ export function createTray(daemon: RcloneSupervisor, mounts: ReturnType<typeof o
       { label: 'Restart daemon', enabled: state !== 'starting', click: click(daemon.restart) },
       ...quickMounts.map(({ id, name, mounted }) => ({
         label: `${mounted ? 'Unmount' : 'Mount'} ${name}`, enabled: running,
-        click: click(() => mounted ? mounts.unmount(mounted.mountPoint) : mounts.mountProfile(id)),
+        click: click(() => mounted ? mounts.unmount(mounted.id) : mounts.mountProfile(id)),
       })),
       { type: 'separator' },
       { label: `Quit ${APP_NAME}`, click: () => app.quit() },

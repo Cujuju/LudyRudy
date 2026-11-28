@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { mkdtemp, rm, stat } from 'node:fs/promises';
+import { mkdir, mkdtemp, realpath, rm, stat, symlink } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import type { MountProfile } from '@shared/types';
 import { openMountManager, mountOptions } from './mountManager';
+import { associateMounts } from './mountIdentity';
 import { RcloneClient } from './rcloneClient';
 
 const draft: MountProfile = {
@@ -36,7 +37,7 @@ function fixture(initial: MountProfile[], managed = false, platform: string = pr
     client: () => rc, profiles: () => profiles, save: (next) => { profiles = next; },
     managed: () => managed, platform: () => platform, notify, reveal, defaults: () => 'full',
   });
-  return { mounts, fetch, notify, reveal, active };
+  return { mounts, fetch, notify, reveal, active, rc };
 }
 
 afterEach(() => vi.unstubAllGlobals());
@@ -92,7 +93,7 @@ describe('MountManager', () => {
   });
 
   it('creates and updates profiles, and restricts paths used to reveal a mount', async () => {
-    const { mounts, reveal, active } = fixture([], true);
+    const { mounts, reveal, active, rc } = fixture([], true);
     const { id: _, ...withoutId } = draft;
     expect(() => mounts.save({ ...withoutId, mountPoint: 'relative' })).toThrow('absolute mount point');
     const profile = mounts.save({ ...withoutId, vfsCacheMode: undefined });
@@ -101,7 +102,7 @@ describe('MountManager', () => {
     await expect(mounts.revealMount(resolve('out/other'))).rejects.toThrow('Unknown mount point');
     await expect(mounts.revealMount(profile.mountPoint)).rejects.toThrow('Unknown mount point');
     active.set(profile.mountPoint, { Fs: 'vault:subdir', MountPoint: profile.mountPoint });
-    await mounts.revealMount(profile.mountPoint);
+    await mounts.revealMount((await rc.mounts())[0]!.id);
     expect(reveal).toHaveBeenCalledWith(profile.mountPoint);
     mounts.delete(profile.id);
     expect(mounts.list()).toEqual([]);
@@ -143,12 +144,69 @@ describe('MountManager', () => {
   });
 
   it('skips auto-mount on attached mode, but supports explicit mount and unmount', async () => {
-    const { mounts, fetch, active } = fixture([draft]);
+    const { mounts, fetch, active, rc } = fixture([draft]);
     await mounts.autoMount();
     expect(fetch).not.toHaveBeenCalled();
     await expect(mounts.mountProfile(draft.id)).resolves.toBe(draft.mountPoint);
-    await mounts.unmount(draft.mountPoint);
+    await mounts.unmount((await rc.mounts())[0]!.id);
     expect(active.size).toBe(0);
+  });
+
+  it('matches equivalent Windows drive paths only when the filesystem also matches', async () => {
+    const profile = { ...draft, mountPoint: 'X:\\' };
+    const { mounts, active, rc } = fixture([profile], false, 'win32');
+    active.set('x:', { MountPoint: 'x:', Fs: 'vault:subdir' });
+    const observed = await rc.observeMounts(true);
+    await expect(associateMounts(observed, [profile], { platform: 'win32', local: false }))
+      .resolves.toMatchObject([{ profileId: profile.id }]);
+    await expect(mounts.mountProfile(profile.id)).resolves.toBe('x:');
+    active.set('x:', { MountPoint: 'x:', Fs: 'other:subdir' });
+    await expect(associateMounts(await rc.observeMounts(true), [profile], { platform: 'win32', local: false }))
+      .resolves.toMatchObject([{ profileId: null }]);
+    await expect(mounts.mountProfile(profile.id)).rejects.toThrow('Another filesystem');
+    await expect(mounts.unmount(observed[0]!.view.id)).rejects.toThrow('The active mount changed');
+    expect(active.has('x:')).toBe(true);
+  });
+
+  it('opens a managed Windows drive-letter mount as an absolute drive root', async () => {
+    const { mounts, active, reveal, rc } = fixture([], true, 'win32');
+    active.set('x:', { Fs: 'vault:subdir', MountPoint: 'x:' });
+    await mounts.revealMount((await rc.mounts(true))[0]!.id);
+    expect(reveal).toHaveBeenCalledWith('X:\\');
+  });
+
+  it.each(['vault:subdir', 'other:subdir'])('leaves equivalent active destinations unassociated even with source %s', async (source) => {
+    const profile = { ...draft, mountPoint: 'X:\\' };
+    const { mounts, active, rc } = fixture([profile], false, 'win32');
+    active.set('x:', { MountPoint: 'x:', Fs: 'vault:subdir' });
+    active.set('X:\\', { MountPoint: 'X:\\', Fs: source });
+    await expect(associateMounts(await rc.observeMounts(true), [profile], { platform: 'win32', local: false }))
+      .resolves.toMatchObject([{ profileId: null, mountPoint: 'x:' }, { profileId: null, mountPoint: 'X:\\' }]);
+    await expect(mounts.mountProfile(profile.id)).rejects.toThrow('Another filesystem');
+  });
+
+  it.skipIf(process.platform === 'win32')('uses the resolved local path for new mounts and associates directory aliases', async () => {
+    const directory = await mkdtemp(join(process.cwd(), '.mount-test-'));
+    try {
+      const target = join(directory, 'target');
+      const alias = join(directory, 'alias');
+      await mkdir(target);
+      await symlink(target, alias);
+      const actual = await realpath(target);
+      const profile = { ...draft, mountPoint: alias };
+      const { mounts, active, rc, notify } = fixture([profile], true);
+      await expect(mounts.mountProfile(profile.id)).resolves.toBe(actual);
+      expect(active.has(actual)).toBe(true);
+      const observed = await rc.observeMounts(false);
+      await expect(associateMounts(observed, [profile], { platform: process.platform, local: true }))
+        .resolves.toMatchObject([{ profileId: profile.id }]);
+      await expect(associateMounts(observed, [profile], { platform: process.platform, local: false }))
+        .resolves.toMatchObject([{ profileId: null }]);
+      await expect(mounts.mountProfile(profile.id)).resolves.toBe(actual);
+      expect(notify).toHaveBeenCalledExactlyOnceWith('mountReady', 'Mount ready', profile.name);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
   });
 
   it.skipIf(process.platform === 'win32')('creates missing managed directories, auto-mounts once, and supports unmount all', async () => {

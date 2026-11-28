@@ -9,7 +9,8 @@ import { LOG_CAPACITY, type LogLine } from '@shared/types';
 import { streamDaemonLogs } from './daemonLog';
 import { argument, profileFile, resolveRclone } from './paths';
 import { localVersion, mountBackend } from './prereqs';
-import { RcloneClient, remoteFs, validRemoteName } from './rcloneClient';
+import { RcloneClient, validRemoteName } from './rcloneClient';
+import { associateMounts } from './mountIdentity';
 import { getSettings, readConfigPassword } from './settingsStore';
 import { createSerialQueue } from './serialQueue';
 
@@ -134,13 +135,16 @@ export function openDaemon(hooks: Hooks = {}) {
       const hostPlatform = snapshot.daemon.mode === 'managed' ? process.platform
         : os === 'windows' ? 'win32' : typeof os === 'string' && /^[a-z][a-z0-9]*$/.test(os) ? os : null;
       const [remotes, mounts, stats, pid, paths] = await Promise.allSettled([
-        client.remoteInventory(hostPlatform === 'win32'), client.mounts(hostPlatform === 'win32'), client.stats(hostPlatform === 'win32'),
+        client.remoteInventory(hostPlatform === 'win32'),
+        client.observeMounts(hostPlatform === 'win32').then((items) => associateMounts(items, getSettings().mounts, {
+          platform: hostPlatform, local: snapshot.daemon.mode === 'managed',
+        })),
+        client.stats(hostPlatform === 'win32'),
         client.call('core/pid'), client.call('config/paths'),
       ]);
       if (client !== rc) return snapshot;
       if (epoch !== inventoryEpoch) return refreshRequest ?? snapshot;
       const errors = [remotes, mounts, stats].flatMap((result) => result.status === 'rejected' ? [errorMessage(result.reason)] : []);
-      const profiles = getSettings().mounts;
       const wasRunning = snapshot.daemon.state === 'running';
       const attached = snapshot.daemon.mode === 'attached';
       const child = managed;
@@ -157,9 +161,7 @@ export function openDaemon(hooks: Hooks = {}) {
         ...snapshot, dataError: errors.length ? errors.join(' ') : null,
         remoteRevision: snapshot.remoteRevision + Number(invalidated || inventoryChanged),
         remotes: remotes.status === 'fulfilled' ? remotes.value.remotes : invalidated ? [] : snapshot.remotes,
-        mounts: mounts.status === 'fulfilled' ? mounts.value.map((mount) => ({
-          ...mount, profileId: profiles.find((profile) => profile.mountPoint === mount.mountPoint && remoteFs(profile.remote, profile.remotePath) === mount.fs)?.id ?? null,
-        })) : snapshot.mounts,
+        mounts: mounts.status === 'fulfilled' ? mounts.value : snapshot.mounts,
         stats: stats.status === 'fulfilled' ? stats.value : snapshot.stats,
       };
       status({

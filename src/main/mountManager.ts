@@ -5,7 +5,8 @@ import type { MountProfile } from '@shared/types';
 import { VFS_CACHE_MODES } from '@shared/types';
 import type { NoticeKind } from '@shared/notice';
 import { validateOptionMap } from '@shared/mountOptions';
-import { daemonPath, isDaemonAbsolute } from './daemonPaths';
+import { isDaemonAbsolute } from './daemonPaths';
+import { mountIdentity, mountPath } from './mountIdentity';
 import { remoteFs, validRemoteName, type RcMountOptions, type RcloneClient } from './rcloneClient';
 import { createSerialQueue } from './serialQueue';
 
@@ -20,20 +21,6 @@ interface MountContext {
   platform: () => string | null;
   notify: Notify;
   reveal: (path: string) => Promise<string>;
-}
-
-function mountPath(path: unknown, platform: string | null): string {
-  if (typeof path !== 'string' || path.includes('\0')) throw new Error('Invalid mount point.');
-  if (!platform) throw new Error('Connect to rclone to verify the mount point on its host.');
-  if (platform === 'win32' && /^[a-z]:[\\/]?$/i.test(path)) return path.slice(0, 2).toUpperCase() + '\\';
-  if (!isDaemonAbsolute(path, platform)) throw new Error('Use an absolute mount point on the rclone host.');
-  const paths = daemonPath(platform);
-  const trimSeparator = (value: string) => value.endsWith(paths.sep) ? value.slice(0, -1) : value;
-  const normalized = paths.normalize(path);
-  if (trimSeparator(normalized) === trimSeparator(paths.parse(normalized).root)) {
-    throw new Error('The filesystem root cannot be used as a mount point.');
-  }
-  return trimSeparator(normalized);
 }
 
 export function mountOptions(profile: MountProfile): RcMountOptions {
@@ -70,20 +57,28 @@ export function openMountManager(context: MountContext) {
       const windows = platform === 'win32';
       const local = context.managed();
       if (!validRemoteName(profile.remote, windows)) throw new Error('Invalid rclone remote name.');
-      const path = mountPath(profile.mountPoint, platform);
+      let path = mountPath(profile.mountPoint, platform);
       const { remotes } = await rc.call('config/listremotes');
       if (!remotes?.includes(profile.remote)) throw new Error('Unknown rclone remote.');
-      const options = mountOptions({ ...profile, mountPoint: path });
+      const identity = mountIdentity({ platform, local });
       if (local && !windows) {
         if (!context.managed() || rc !== context.client()) throw new Error('The rclone daemon changed during mount setup.');
         await mkdir(path, { recursive: true });
         const resolved = await realpath(path);
         if (!(await stat(resolved)).isDirectory() || resolved === parse(resolved).root) throw new Error('Invalid mount directory.');
+        path = resolved;
       }
-      const active = (await rc.mounts(windows)).find((entry) => entry.mountPoint === path);
-      if (active) {
-        if (active.fs === options.fs) return active.mountPoint;
+      const options = mountOptions({ ...profile, mountPoint: path });
+      const mounts = await rc.observeMounts(windows);
+      const matching = await identity.atPoint(mounts, path);
+      if (rc !== context.client()) throw new Error('The rclone daemon changed during mount setup.');
+      if (matching.length) {
+        const [active] = matching;
+        if (matching.length === 1 && active?.source === identity.source(profile)) return active.view.mountPoint;
         throw new Error('Another filesystem already uses that mount point.');
+      }
+      if (windows && mounts.some(({ view }) => identity.checkPoint(view.mountPoint)?.toLowerCase() === path.toLowerCase())) {
+        throw new Error('A mount already uses a path that differs only in letter case.');
       }
       if (options.mountType) {
         const { mountTypes } = await rc.call('mount/types');
@@ -126,25 +121,25 @@ export function openMountManager(context: MountContext) {
       context.save(context.profiles().filter((profile) => profile.id !== id));
     },
     mountProfile: (id: string) => serialize(() => mount(id)),
-    unmount(path: string): Promise<void> {
+    unmount(id: string): Promise<void> {
       return serialize(async () => {
         const rc = context.client();
-        if (typeof path !== 'string' || !(await rc.mounts(context.platform() === 'win32')).some((mount) => mount.mountPoint === path)) {
-          throw new Error('Unknown active mount point.');
-        }
-        await rc.call('mount/unmount', { mountPoint: path });
+        const mount = (await rc.mounts(context.platform() === 'win32')).find((entry) => entry.id === id);
+        if (!mount || rc !== context.client()) throw new Error('The active mount changed. Refresh and try again.');
+        await rc.call('mount/unmount', { mountPoint: mount.mountPoint });
       });
     },
     unmountAll: () => serialize(async () => { await context.client().call('mount/unmountall'); }),
-    async revealMount(path: string): Promise<void> {
+    async revealMount(id: string): Promise<void> {
       if (!context.managed()) throw new Error('Open this mount point on the rclone host.');
-      if (typeof path !== 'string' || !isDaemonAbsolute(path, context.platform())) throw new Error('Use an absolute mount point.');
       const rc = context.client();
-      if (!(await rc.mounts(context.platform() === 'win32')).some(({ mountPoint }) => mountPoint === path)) {
-        throw new Error('Unknown mount point.');
-      }
+      const platform = context.platform();
+      const mount = (await rc.mounts(platform === 'win32')).find((entry) => entry.id === id);
+      if (!mount) throw new Error('Unknown mount point.');
+      const point = mountPath(mount.mountPoint, platform);
       if (!context.managed() || rc !== context.client()) throw new Error('The rclone connection changed.');
-      if (await context.reveal(path)) throw new Error('Could not open the mount point.');
+      const shellPath = isDaemonAbsolute(mount.mountPoint, platform) ? mount.mountPoint : point;
+      if (await context.reveal(shellPath)) throw new Error('Could not open the mount point.');
     },
     async autoMount(): Promise<void> {
       if (!context.managed()) return;

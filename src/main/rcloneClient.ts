@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, createHmac, randomBytes } from 'node:crypto';
 import { isIP } from 'node:net';
 import type { ActiveMount, CompletedTransfer, RemoteParameters, RemoteEntry, RemoteQuota, RemoteSummary, TransferStats, MountProfile } from '@shared/types';
 import { isWindowsDrivePath } from './daemonPaths';
@@ -15,6 +15,7 @@ export interface RcItem {
   Encrypted?: string;
 }
 interface RcMount { Fs: string; MountPoint: string; MountedOn?: string }
+export interface ObservedMount { source: string; view: ActiveMount }
 interface RcStats extends Omit<TransferStats, 'bwLimit' | 'bwLimitTx' | 'bwLimitRx' | 'transferring'> { transferring?: TransferStats['transferring'] }
 type ConfigDump = Record<string, Record<string, string>>;
 type NoParams = Record<string, never>;
@@ -123,6 +124,7 @@ export class RcloneHttpError extends Error {
 export class RcloneClient {
   readonly endpoint: string;
   private readonly headers: Headers;
+  private readonly mountKey = randomBytes(32);
 
   constructor(endpoint: string, auth?: string) {
     const url = URL.parse(endpoint);
@@ -214,11 +216,19 @@ export class RcloneClient {
       bwLimit: limit.rate, bwLimitTx: limit.bytesPerSecondTx, bwLimitRx: limit.bytesPerSecondRx };
   }
 
-  async mounts(windows = false): Promise<ActiveMount[]> {
+  async observeMounts(windows: boolean): Promise<ObservedMount[]> {
     const { mountPoints } = await this.call('mount/listmounts');
     return (mountPoints ?? []).map(({ Fs, MountPoint, MountedOn }) => ({
-      profileId: null, fs: describeFs(Fs, windows).display, mountPoint: MountPoint, mountedOn: MountedOn ?? null, status: 'mounted',
+      source: Fs,
+      view: {
+        id: createHmac('sha256', this.mountKey).update(JSON.stringify([Fs, MountPoint, MountedOn])).digest('hex'),
+        profileId: null, fs: describeFs(Fs, windows).display, mountPoint: MountPoint, mountedOn: MountedOn ?? null, status: 'mounted',
+      },
     }));
+  }
+
+  async mounts(windows = false): Promise<ActiveMount[]> {
+    return (await this.observeMounts(windows)).map(({ view }) => view);
   }
 
   async list(remote: string, path: string, showEncrypted = false): Promise<RemoteEntry[]> {
