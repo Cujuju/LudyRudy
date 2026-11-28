@@ -7,3 +7,12 @@ Use the sibling `solidjs-toolkit` checkout for linked packages; typecheck reads 
 For local development with a running rclone daemon, pass `--rclone-endpoint=<url>` and, when needed, `--rclone-auth=<user:pass>` after `pnpm dev --`. Use `pnpm demo` for the isolated fixtures.
 
 Track work in [Cujuju/ludyRudy Issues](https://github.com/Cujuju/ludyRudy/issues).
+
+## Project review workflow
+
+1. Record the app and toolkit commit IDs, target platform, runtime versions, and pinned rclone version. Install from the lockfiles in isolated checkouts. If smoke needs missing toolkit build artifacts, build the linked packages in the isolated toolkit checkout. Run the handoff checks above and record any pre-existing failures.
+2. Trace each user action through the renderer, preload, IPC, service, and RC method. Cover managed and attached daemons, config changes, restarts, cancellation, partial completion, retries, stale responses, and platform path rules. Review settings and credential handling in main.
+3. Check the actual RC response against the pinned rclone binary when a finding depends on its behavior. Use a disposable profile, config, and temporary local folders. Keep the fake-daemon smoke suite for renderer and IPC coverage.
+4. Check keyboard focus, theme contrast, and feedback during busy or failed actions. Measure repeat work on large listings and during idle polling. For duplicated code, identify the shared behavior and test what existing callers rely on before proposing extraction.
+5. Review development, packaging, release automation, and tests for setup assumptions and platform gaps. Compare fake responses with the real daemon for the contracts under review.
+6. Verify each finding with a focused check or a complete source trace. Search existing issues and open pull requests. File one issue per independently actionable root cause with the impact, conditions, evidence, links pinned to the reviewed commit, and a regression check. Link the issues to the review and record what was untested.
