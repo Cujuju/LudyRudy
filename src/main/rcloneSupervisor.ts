@@ -93,10 +93,13 @@ export function openDaemon(hooks: Hooks = {}) {
       platform: process.platform, rcloneInstalled: !!binary.binaryPath,
       rcloneVersion: null, rclonePath: binary.binaryPath, mountBackend: mountBackend(),
     },
-    remotes: [], mounts: [], stats: null, dataError: null, logs: [], jobRuns: [],
+    remotes: [], remoteRevision: 0, mounts: [], stats: null, dataError: null, logs: [], jobRuns: [],
   };
   let rc: RcloneClient | undefined;
   let managed: ManagedProcess | undefined;
+  let remoteFingerprint: string | undefined;
+  let inventoryEpoch = 0;
+  let inventoryInvalidated = false;
   let refreshRequest: Promise<AppSnapshot> | undefined;
   const serialize = createSerialQueue();
   const probe = (path: string | null) => {
@@ -123,14 +126,16 @@ export function openDaemon(hooks: Hooks = {}) {
   }
 
   async function collect(client: RcloneClient): Promise<AppSnapshot> {
+    const epoch = inventoryEpoch;
     try {
       const { version, os } = await client.call('core/version');
       if (typeof version !== 'string' || !version) throw new Error('rclone returned no version.');
       const [remotes, mounts, stats, pid, paths] = await Promise.allSettled([
-        client.listRemotes(os === 'windows'), client.mounts(os === 'windows'), client.stats(os === 'windows'),
+        client.remoteInventory(os === 'windows'), client.mounts(os === 'windows'), client.stats(os === 'windows'),
         client.call('core/pid'), client.call('config/paths'),
       ]);
       if (client !== rc) return snapshot;
+      if (epoch !== inventoryEpoch) return refreshRequest ?? snapshot;
       const errors = [remotes, mounts, stats].flatMap((result) => result.status === 'rejected' ? [errorMessage(result.reason)] : []);
       const profiles = getSettings().mounts;
       const wasRunning = snapshot.daemon.state === 'running';
@@ -141,9 +146,14 @@ export function openDaemon(hooks: Hooks = {}) {
         ts: new Date().toISOString(), level: 'info', source: 'app',
         message: attached ? 'Attached to rclone.' : firstReady ? 'Started managed rclone.' : 'Reconnected to managed rclone.',
       });
+      const invalidated = inventoryInvalidated;
+      inventoryInvalidated = false;
+      const inventoryChanged = remotes.status === 'fulfilled' && remotes.value.fingerprint !== remoteFingerprint;
+      if (remotes.status === 'fulfilled') remoteFingerprint = remotes.value.fingerprint;
       snapshot = {
         ...snapshot, dataError: errors.length ? errors.join(' ') : null,
-        remotes: remotes.status === 'fulfilled' ? remotes.value : snapshot.remotes,
+        remoteRevision: snapshot.remoteRevision + Number(invalidated || inventoryChanged),
+        remotes: remotes.status === 'fulfilled' ? remotes.value.remotes : invalidated ? [] : snapshot.remotes,
         mounts: mounts.status === 'fulfilled' ? mounts.value.map((mount) => ({
           ...mount, profileId: profiles.find((profile) => profile.mountPoint === mount.mountPoint && remoteFs(profile.remote, profile.remotePath) === mount.fs)?.id ?? null,
         })) : snapshot.mounts,
@@ -159,6 +169,7 @@ export function openDaemon(hooks: Hooks = {}) {
         hooks.ready?.();
       }
     } catch (error) {
+      if (client === rc && epoch !== inventoryEpoch) return refreshRequest ?? snapshot;
       if (client === rc && snapshot.daemon.error !== errorMessage(error)) disconnected('error', errorMessage(error));
     }
     return snapshot;
@@ -312,10 +323,16 @@ export function openDaemon(hooks: Hooks = {}) {
     refresh() {
       if (!rc || snapshot.daemon.state === 'starting') return Promise.resolve(snapshot);
       if (!refreshRequest) {
-        const current = rc;
-        refreshRequest = collect(current).finally(() => { if (current === rc) refreshRequest = undefined; });
+        const request = collect(rc).finally(() => { if (refreshRequest === request) refreshRequest = undefined; });
+        refreshRequest = request;
       }
       return refreshRequest;
+    },
+    invalidateRemoteInventory(): void {
+      if (!rc || snapshot.daemon.state === 'starting') return;
+      inventoryEpoch += 1;
+      refreshRequest = undefined;
+      inventoryInvalidated = true;
     },
     start: () => serialize(start),
     stop: () => serialize(stop),

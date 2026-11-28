@@ -4,6 +4,7 @@ import type { RemoteSummary } from '@shared/types';
 import { daemonSourceLabel, deriveOnboarding } from './onboarding';
 
 const snapshot: AppSnapshot = {
+  remoteRevision: 0,
   daemon: {
     state: 'running', endpoint: null, pid: null, version: 'v1.73.0', binaryPath: null,
     binarySource: 'bundled', configPath: null, configEncrypted: null, attached: false, mode: 'managed', error: null,

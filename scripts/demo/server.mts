@@ -297,6 +297,11 @@ export async function startDemoRclone() {
   return {
     endpoint: `http://127.0.0.1:${address.port}`, auth,
     close,
+    replaceBrowserListing() {
+      remotes.gdrive = { ...remotes.gdrive, root_folder_id: 'new-root' };
+      const entry = item('Documents/new-root-file.txt', 'text/plain');
+      listings.get('gdrive')?.set(entry.Path, entry);
+    },
     replaceTransferHistory(name: string) { completedName = name; failHistory = true; },
   };
 }

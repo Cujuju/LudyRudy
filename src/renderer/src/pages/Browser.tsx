@@ -1,4 +1,4 @@
-import { createEffect, createMemo, createSignal, For, Match, Show, Switch, untrack } from 'solid-js';
+import { createEffect, createMemo, createSignal, For, Match, onCleanup, Show, Switch, untrack } from 'solid-js';
 import AnchoredPopover from '@cujuju/solidjs-anchored-popover';
 import { GlassMenu } from '@cujuju/solidjs-glass-menu';
 import {
@@ -117,6 +117,10 @@ function ColumnPicker(props: { visible: readonly BrowserColumnKey[]; onToggle: (
 }
 
 export function Browser(props: PageProps) {
+  return <Show when={props.store.browserSession()} keyed><BrowserSession {...props} /></Show>;
+}
+
+function BrowserSession(props: PageProps) {
   const [filter, setFilter] = createSignal('');
   const [sort, setSort] = createSignal<SortState>({ key: 'name', direction: 'asc' });
   const [columns, setColumns] = createSignal<BrowserColumnKey[]>(
@@ -135,6 +139,14 @@ export function Browser(props: PageProps) {
   const remote = () => remotes().find(({ name }) => name === selection());
   const request = createMemo(() => connected() && selection() ? { remote: selection(), path: path() } : false);
   const cache = untrack(() => props.store.browserCache);
+  const session = untrack(() => props.store.browserSession());
+  const sameSession = () => untrack(() => props.store.browserSession()) === session;
+  let disposed = false;
+  onCleanup(() => {
+    disposed = true;
+    listingSeq += 1;
+    quotaSeq += 1;
+  });
   type ListingState = { target: { remote: string; path: string }; items: RemoteEntry[]; loading: boolean; error: string };
   type QuotaState = { name: string; value: RemoteQuota | null; loading: boolean; error: string };
   const [entries, setEntries] = createSignal<ListingState>();
@@ -241,6 +253,7 @@ export function Browser(props: PageProps) {
     props.store.setBrowserTarget({ remote: name, path: next });
   };
   const refresh = async (withQuota = true) => {
+    if (disposed || !sameSession()) return;
     const target = untrack(request);
     if (!target) return;
     if (withQuota) void loadQuota(target.remote, true);
@@ -252,6 +265,7 @@ export function Browser(props: PageProps) {
     const directory = path();
     setEdit({ label: 'Create folder', initial: directory ? directory + '/' : '', submit: async (target) => {
       await window.api.mkdir(name, target);
+      if (!sameSession()) return;
       cache.invalidateDirectory(name, directory);
       cache.invalidateDirectory(name, parentRemotePath(target));
       await refresh(false);
@@ -267,13 +281,15 @@ export function Browser(props: PageProps) {
         if (entry.isDir) await window.api.moveDirectory(name, from, target);
         else await window.api.moveFile(name, from, name, target);
       } finally {
-        if (entry.isDir) {
-          cache.invalidatePrefix(name, from);
-          cache.invalidatePrefix(name, target);
+        if (sameSession()) {
+          if (entry.isDir) {
+            cache.invalidatePrefix(name, from);
+            cache.invalidatePrefix(name, target);
+          }
+          cache.invalidateDirectory(name, parentRemotePath(from));
+          cache.invalidateDirectory(name, parentRemotePath(target));
+          await refresh(false);
         }
-        cache.invalidateDirectory(name, parentRemotePath(from));
-        cache.invalidateDirectory(name, parentRemotePath(target));
-        await refresh(false);
       }
     } });
   }
@@ -282,6 +298,7 @@ export function Browser(props: PageProps) {
     const name = selection();
     const target = entry.path;
     await (entry.isDir ? window.api.purge(name, target) : window.api.deleteFile(name, target));
+    if (!sameSession()) return;
     if (entry.isDir) cache.invalidatePrefix(name, target);
     cache.invalidateDirectory(name, parentRemotePath(target));
     cache.invalidateQuota(name);
@@ -310,7 +327,7 @@ export function Browser(props: PageProps) {
                   const name = untrack(selection);
                   const dir = untrack(path);
                   const { uploaded, skipped, failure } = await window.api.uploadFiles(name, dir);
-                  if (uploaded.length || failure) {
+                  if (sameSession() && (uploaded.length || failure)) {
                     cache.invalidateDirectory(name, dir);
                     cache.invalidateQuota(name);
                     await refresh(true);
