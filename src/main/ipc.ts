@@ -106,12 +106,12 @@ export function registerIpc({ daemon, mounts, jobs, auth, remotes, current, refr
   invoke('generateSecret', (bits) => Promise.resolve(generateSecret(bits)));
   invoke('setConfigPassword', (password) => setConfigPassword(daemon, password));
   invoke('hasConfigPassword', async () => await readConfigPassword(managedPaths().configPath) !== null);
-  invoke('startAuth', async (provider) => {
+  invoke('startAuth', async (draft) => {
     const binary = daemon.current().daemon.binaryPath;
     if (!binary) throw new Error('The rclone executable could not be found.');
-    if (!(await remotes.listProviders()).some((entry) => entry.name === provider && entry.isOAuth)) throw new Error('Unknown OAuth provider.');
+    const config = await remotes.authorization(draft);
     if (isQuitting()) throw new Error('The app is shutting down.');
-    return auth.start(binary, provider);
+    return auth.start(binary, config);
   });
   invoke('authStatus', (id) => Promise.resolve(auth.status(id)));
   invoke('openAuth', (id) => shell.openExternal(auth.openUrl(id)));

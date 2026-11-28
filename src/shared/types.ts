@@ -180,6 +180,12 @@ export interface AuthSession {
 }
 
 export type RemoteParameters = Record<string, string | boolean | number>;
+export interface RemoteAuthDraft {
+  type: string;
+  name?: string;
+  parameters: RemoteParameters;
+}
+
 export interface RemoteDraft {
   name: string;
   type: string;

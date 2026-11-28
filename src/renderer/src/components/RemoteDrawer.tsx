@@ -144,6 +144,7 @@ export function RemoteDrawer(props: { store: AppStore; remote?: RemoteSummary; c
   }
   onMount(load);
   let disposed = false;
+  let supersededAuth: Promise<void> | undefined;
   onCleanup(() => {
     disposed = true;
     const id = session()?.id;
@@ -152,10 +153,14 @@ export function RemoteDrawer(props: { store: AppStore; remote?: RemoteSummary; c
 
   async function authorize() {
     await authAction.run(async () => {
+      const before = untrack(parameters);
+      const request = untrack(() => ({ type: kind(), name: props.remote?.name, parameters: draftParameters() }));
       const previous = untrack(session)?.id;
       if (previous) await window.api.cancelAuth(previous);
-      const next = await window.api.startAuth(untrack(kind));
-      if (disposed) await window.api.cancelAuth(next.id);
+      await supersededAuth;
+      if (disposed || untrack(parameters) !== before) return;
+      const next = await window.api.startAuth(request);
+      if (disposed || untrack(parameters) !== before) await window.api.cancelAuth(next.id);
       else setSession(next);
     });
   }
@@ -169,18 +174,27 @@ export function RemoteDrawer(props: { store: AppStore; remote?: RemoteSummary; c
 
   function change(option: string, value: string | boolean) {
     setParameters((values) => ({ ...values, [option]: value }));
+    const id = session()?.id;
+    if (id) {
+      setSession(undefined);
+      supersededAuth = window.api.cancelAuth(id).catch((error: unknown) => console.error('Could not close authorization.', error));
+    }
+  }
+
+  function draftParameters(): RemoteParameters {
+    const changes = parameters();
+    return Object.fromEntries(fields().flatMap((option) => {
+      const key = option.name;
+      const value = changes[key];
+      return Object.hasOwn(changes, key) && value !== undefined && (value !== '' || !option.sensitive) ? [[key, value]] : [];
+    }));
   }
 
   async function save() {
     if (cannotSave()) return;
     await writeConfig(() => untrack(() => {
-      const cleaned = Object.fromEntries(fields().flatMap((option) => {
-        const key = option.name;
-        const value = parameters()[key];
-        return Object.hasOwn(parameters(), key) && (value !== '' || !option.sensitive) ? [[key, value]] : [];
-      })) as RemoteParameters;
       const id = authComplete() ? auth()?.id : undefined;
-      const draft = { name: name().trim(), type: kind(), parameters: cleaned, ...(id ? { authSessionId: id } : {}) };
+      const draft = { name: name().trim(), type: kind(), parameters: draftParameters(), ...(id ? { authSessionId: id } : {}) };
       return props.remote ? window.api.updateRemote(draft) : window.api.createRemote(draft);
     }));
   }

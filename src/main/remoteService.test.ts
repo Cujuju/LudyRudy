@@ -22,7 +22,9 @@ const fixture = (dump: Record<string, Record<string, string>>, responses: Record
       case '/config/providers': return Response.json({ providers: [
         { Name: 'z-other', Prefix: 'other', Description: 'Other', Options: [] },
         { Name: 'crypt', Prefix: 'crypt', Description: 'Crypt', Options: [{ Name: 'password', IsPassword: true, Default: secret() }] },
-        { Name: 'drive', Prefix: 'drive', Description: 'Drive', Options: [{ Name: 'token' }] },
+        { Name: 'drive', Prefix: 'drive', Description: 'Drive', Options: [
+          { Name: 'token' }, { Name: 'client_id' }, { Name: 'client_secret', Sensitive: true }, { Name: 'scope' }, { Name: 'chunk_size' },
+        ] },
         { Name: 'sftp', Prefix: 'sftp', Description: 'SFTP', Options: [
           { Name: 'user', Sensitive: true, Default: secret(), ValueStr: secret(), Examples: [{ Value: secret(), Help: secret() }], Exclusive: true },
           { Name: 'pass', IsPassword: true, DefaultStr: secret() },
@@ -42,7 +44,8 @@ const fixture = (dump: Record<string, Record<string, string>>, responses: Record
   });
   vi.stubGlobal('fetch', fetch);
   const client = new RcloneClient('http://localhost:5572');
-  return { fetch, daemon, service: openRemotes({ client: () => client, isCurrentClient: () => daemon.connected }, { token: vi.fn() }) };
+  const token = vi.fn(() => secret());
+  return { fetch, daemon, token, service: openRemotes({ client: () => client, isCurrentClient: () => daemon.connected }, { token }) };
 };
 
 const crypt = (targetRemote: string): CryptDraft => ({
@@ -91,6 +94,48 @@ describe('remote names and catalog', () => {
       expect(option?.defaultValue).toBeUndefined();
     }
     await expect(service.remoteEditor({ name: 'nas', type: 'drive' })).rejects.toThrow('The remote changed');
+  });
+});
+
+describe('effective OAuth configuration', () => {
+  it('uses draft options for a new remote and never accepts a pre-existing token', async () => {
+    const { service, token } = fixture({});
+    const draft = { type: 'drive', parameters: { client_id: 'app-client', client_secret: secret(), token: secret(), scope: 'drive.readonly' } };
+    const prepared = await service.authorization(draft);
+    expect(prepared.values).toEqual({ client_id: 'app-client', client_secret: draft.parameters.client_secret, scope: 'drive.readonly' });
+    await service.createRemote({ ...draft, name: 'new-drive', authSessionId: 'session' });
+    expect(token).toHaveBeenCalledWith('session', prepared);
+  });
+
+  it('reconnects with saved write-only credentials and applies explicit changes', async () => {
+    const saved = { type: 'drive', client_id: 'saved-client', client_secret: secret(), token: secret(), scope: 'drive', unrelated: secret(), chunk_size: '' };
+    const { service, token, fetch } = fixture({ photos: saved });
+    const draft = { name: 'photos', type: 'drive', parameters: { scope: 'drive.readonly' } };
+    const prepared = await service.authorization(draft);
+    expect(prepared.values).toEqual({ client_id: 'saved-client', client_secret: saved.client_secret, scope: 'drive.readonly' });
+    const editor = await service.remoteEditor(draft);
+    expect(JSON.stringify(editor)).not.toContain(saved.client_secret);
+    await service.updateRemote({ ...draft, authSessionId: 'session' });
+    expect(token).toHaveBeenCalledWith('session', prepared);
+    const body = JSON.parse(String(fetch.mock.lastCall?.[1]?.body));
+    expect(body.parameters).toEqual({ scope: 'drive.readonly', token: token.mock.results[0]?.value });
+  });
+
+  it('omits explicitly cleared options after merging the saved config', async () => {
+    const { service } = fixture({ photos: { type: 'drive', scope: 'drive', chunk_size: '32Mi' } });
+    const prepared = await service.authorization({ name: 'photos', type: 'drive', parameters: { scope: '', chunk_size: '' } });
+    expect(prepared.values).toEqual({});
+  });
+
+  it('requires a valid request and a verifiable daemon identity before authorization or token use', async () => {
+    const { daemon, fetch, service, token } = fixture({});
+    await expect(service.authorization(null!)).rejects.toThrow('Invalid authorization request');
+    expect(fetch).not.toHaveBeenCalled();
+    daemon.executeId = '';
+    const draft = { name: 'new-drive', type: 'drive', parameters: {} };
+    await expect(service.authorization(draft)).rejects.toThrow('Could not identify the rclone daemon');
+    await expect(service.createRemote({ ...draft, authSessionId: 'session' })).rejects.toThrow('Could not identify the rclone daemon');
+    expect(token).not.toHaveBeenCalled();
   });
 });
 
