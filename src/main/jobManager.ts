@@ -3,6 +3,7 @@ import type { SyncJob, SyncJobRun } from '@shared/types';
 import type { Notify } from './mountManager';
 import { daemonPath, isDaemonAbsolute, isWindowsDrivePath } from './daemonPaths';
 import { remoteFs, validRemoteName, type RcloneClient } from './rcloneClient';
+import { fileSystemDiagnostic } from './rcloneErrors';
 
 const RECENT_RUN_LIMIT = 50;
 
@@ -76,7 +77,8 @@ export function openJobManager(context: JobContext) {
         complete(entry, 'failed', 'The rclone daemon restarted.');
       } else if (status.finished) {
         const state = status.success ? 'finished' : entry.stopRequested ? 'stopped' : 'failed';
-        complete(entry, state, state === 'failed' ? 'rclone reported a job failure.' : null);
+        const error = state === 'failed' ? fileSystemDiagnostic(status.error) ?? 'rclone reported a job failure.' : null;
+        complete(entry, state, error);
       } else if (entry.run.state === 'reconnecting') {
         entry.run = { ...entry.run, state: 'running', error: null };
         context.change();

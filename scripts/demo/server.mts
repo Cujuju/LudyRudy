@@ -244,7 +244,12 @@ export async function startDemoRclone() {
       const mounted = children(entries, key);
       return { inUse: 0, metadataCache: { files: mounted.filter((entry) => !entry.IsDir).length, dirs: mounted.filter((entry) => entry.IsDir).length } };
     },
-    '/vfs/refresh': ({ dir }) => ({ result: { [typeof dir === 'string' ? dir : '']: 'OK' } }),
+    '/vfs/refresh': ({ fs, dir }) => {
+      if (![...mountPoints.values()].some(({ Fs }) => Fs === fs)) throw new Error('Unknown VFS.');
+      const directory = typeof dir === 'string' ? dir : '';
+      const { entries, key } = fsPath(fs, directory);
+      return { result: { [directory]: !directory || entries.get(key)?.IsDir ? 'OK' : 'file does not exist' } };
+    },
     '/vfs/forget': ({ dir }) => ({ forgotten: typeof dir === 'string' ? [dir] : [] }),
     '/operations/list': ({ fs, remote, opt }) => {
       const { entries, key } = fsPath(fs, remote);

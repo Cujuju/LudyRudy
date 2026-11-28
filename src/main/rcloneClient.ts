@@ -2,6 +2,7 @@ import { createHash, createHmac, randomBytes } from 'node:crypto';
 import { isIP } from 'node:net';
 import type { ActiveMount, CompletedTransfer, RemoteParameters, RemoteEntry, RemoteQuota, RemoteSummary, TransferStats, MountProfile } from '@shared/types';
 import { isWindowsDrivePath } from './daemonPaths';
+import { fileSystemDiagnostic, rcFailureDiagnostic } from './rcloneErrors';
 import { decodeRcResponse, type RcItem, type RcResponse } from './rcloneResponses';
 
 export type { RcItem } from './rcloneResponses';
@@ -100,8 +101,8 @@ export function describeFs(fs: string, windows: boolean): { remote: string | nul
 export const remoteFs = (remote: string, path = '') => `${remote}:${path}`;
 
 export class RcloneHttpError extends Error {
-  constructor(method: string, readonly status: number) {
-    super(`rclone ${method} returned HTTP ${status}.`);
+  constructor(method: string, readonly status: number, diagnostic?: string) {
+    super(diagnostic ?? `rclone ${method} returned HTTP ${status}.`);
   }
 }
 
@@ -143,13 +144,8 @@ export class RcloneClient {
     });
     if (!response.ok) {
       const params = args[0];
-      if (response.status === 500 && params && '_config' in params && params._config === NO_CLOBBER) {
-        const result: unknown = await response.json().catch(() => null);
-        if (result && typeof result === 'object' && 'error' in result &&
-          (result.error === 'immutable file modified' || result.error === 'is a directory not a file' ||
-            result.error === 'is a file not a directory')) throw new Error('The destination already exists.');
-      } else await response.body?.cancel();
-      throw new RcloneHttpError(method, response.status);
+      const noClobber = !!params && '_config' in params && params._config === NO_CLOBBER;
+      throw new RcloneHttpError(method, response.status, await rcFailureDiagnostic(method, response, noClobber));
     }
     return decodeRcResponse(method, await response.json().catch(() => null));
   }
@@ -214,6 +210,14 @@ export class RcloneClient {
   async mountTypes(): Promise<string[]> {
     const { mountTypes } = await this.call('mount/types');
     return mountTypes ?? [];
+  }
+
+  async refreshVfs(fs: string, directory: string, recursive: boolean): Promise<void> {
+    const { result } = await this.call('vfs/refresh', { fs, ...(directory ? { dir: directory } : {}), recursive: String(recursive) });
+    const outcome = Object.hasOwn(result, directory) ? result[directory] : undefined;
+    if (outcome !== 'OK') {
+      throw new Error(fileSystemDiagnostic(outcome) ?? 'rclone could not refresh the mount cache.');
+    }
   }
 
   async list(remote: string, path: string, showEncrypted = false): Promise<RemoteEntry[]> {

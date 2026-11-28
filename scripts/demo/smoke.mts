@@ -79,6 +79,9 @@ export async function smoke(): Promise<string[]> {
       if (!(await api.listVfs()).includes('smoke-files:')) return false;
       await api.vfsStats('smoke-files');
       await api.vfsRefresh('smoke-files');
+      const refreshFailed = await api.vfsRefresh('smoke-files', '', 'missing')
+        .then(() => false, (error) => error.message.includes('The path was not found'));
+      if (!refreshFailed) return false;
       await api.vfsForget('smoke-files');
       const activeMount = (await api.refresh()).mounts.find((entry) => entry.mountPoint === mounted);
       if (!activeMount) return false;
