@@ -16,6 +16,12 @@ export interface AppSnapshot {
   jobRuns: SyncJobRun[];
 }
 
+export interface UploadResult {
+  uploaded: string[];
+  skipped?: string[];
+  failure?: { file: string; message: string };
+}
+
 export interface DesktopApi {
   platform: string;
   arch: string;
@@ -72,7 +78,7 @@ export interface DesktopApi {
   moveDirectory(remote: string, source: string, destination: string): Promise<void>;
   pickDirectory(): Promise<string | null>;
   pickRcloneBinary(): Promise<string | null>;
-  uploadFiles(remote: string, remoteDir: string): Promise<number>;
+  uploadFiles(remote: string, remoteDir: string): Promise<UploadResult>;
   downloadFile(remote: string, remotePath: string, suggestedName?: string): Promise<boolean>;
   openExternal(url: string): Promise<void>;
   openPath(kind: 'config' | 'cache' | 'data'): Promise<void>;

@@ -19,7 +19,9 @@ type NoParams = Record<string, never>;
 type RcResult = Record<string, unknown>;
 export interface RcFile { fs: string; remote: string }
 export interface RcListRequest extends RcFile { _config?: { UseServerModTime?: boolean }; opt?: { showEncrypted: boolean } }
-export interface RcCopyFile { srcFs: string; srcRemote: string; dstFs: string; dstRemote: string }
+// Force a transfer comparison so equal existing files also count as conflicts.
+export const NO_CLOBBER = { Immutable: true, IgnoreTimes: true } as const;
+export interface RcCopyFile { srcFs: string; srcRemote: string; dstFs: string; dstRemote: string; _config?: typeof NO_CLOBBER }
 export interface RcMountOptions {
   fs: string;
   mountPoint: string;
@@ -69,7 +71,7 @@ interface RcMethods {
   'operations/purge': [RcFile, RcResult];
   'operations/copyfile': [RcCopyFile, RcResult];
   'operations/movefile': [RcCopyFile, RcResult];
-  'sync/move': [{ srcFs: string; dstFs: string; createEmptySrcDirs: boolean; deleteEmptySrcDirs: boolean }, RcResult];
+  'sync/move': [{ srcFs: string; dstFs: string; createEmptySrcDirs: boolean; deleteEmptySrcDirs: boolean; _config?: typeof NO_CLOBBER }, RcResult];
   'sync/copy': [RcSync, { jobid: number; executeId?: string }];
   'sync/sync': [RcSync, { jobid: number; executeId?: string }];
   'job/list': [NoParams, { jobids: number[]; executeId?: string }];
@@ -142,7 +144,13 @@ export class RcloneClient {
       throw new Error(signal.aborted ? `rclone ${method} timed out.` : `Could not reach rclone for ${method}.`);
     });
     if (!response.ok) {
-      await response.body?.cancel();
+      const params = args[0];
+      if (response.status === 500 && params && '_config' in params && params._config === NO_CLOBBER) {
+        const result: unknown = await response.json().catch(() => null);
+        if (result && typeof result === 'object' && 'error' in result &&
+          (result.error === 'immutable file modified' || result.error === 'is a directory not a file' ||
+            result.error === 'is a file not a directory')) throw new Error('The destination already exists.');
+      } else await response.body?.cancel();
       throw new RcloneHttpError(method, response.status);
     }
     const data: unknown = await response.json().catch(() => null);
@@ -199,6 +207,10 @@ export class RcloneClient {
   async stat(remote: string, path: string): Promise<RemoteEntry | null> {
     const { item } = await this.call('operations/stat', { fs: remoteFs(remote), remote: path });
     return item ? toRemoteEntry(item) : null;
+  }
+
+  async requireMissingDestination(remote: string, path: string): Promise<void> {
+    if (await this.stat(remote, path)) throw new Error('The destination already exists.');
   }
 
   async transferred(): Promise<CompletedTransfer[]> {
