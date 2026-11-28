@@ -52,6 +52,13 @@ export async function smoke(): Promise<string[]> {
       const options = { name: 'Smoke', remote: 'smoke-files', remotePath: '', mountPoint, autoMount: false,
         vfsCacheMaxSize: '', vfsCacheMaxAge: '', readOnly: true, extraFlags: [] };
       if ((await api.createRemote({ name: 'smoke-files', type: 'memory', parameters: {} })).state !== 'complete') return false;
+      if (${process.platform !== 'win32'}) {
+        const literal = ${JSON.stringify('literal\\name\r\n')};
+        await api.mkdir('smoke-files', literal);
+        if (!(await api.browse('smoke-files', '')).some((entry) => entry.path === literal)) return false;
+        await api.purge('smoke-files', literal);
+        if ((await api.browse('smoke-files', '')).some((entry) => entry.path === literal)) return false;
+      }
       if ((await api.createCryptRemote({ name: 'smoke-vault', targetRemote: 'smoke-files', targetPath: 'vault',
         password: await api.generateSecret(), filenameEncryption: 'standard', directoryNameEncryption: true })).state !== 'complete') return false;
       if ((await api.updateRemote({ name: 'smoke-vault', type: 'crypt', parameters: { directory_name_encryption: false } })).state !== 'complete') return false;
@@ -121,9 +128,10 @@ async function verifyUi(page: Cdp, abort: () => string | null, daemon: {
     `document.querySelector(${JSON.stringify(scope)})?.textContent.includes(${JSON.stringify(label)})`,
   )) || null, abort);
   const flyout = ':popover-open .cujuju-select-flyout-panel';
-  const key = async (name: 'Escape' | 'Tab', modifiers = 0) => {
+  const keyCodes = { Escape: 27, Tab: 9, Enter: 13 };
+  const key = async (name: keyof typeof keyCodes, modifiers = 0) => {
     for (const type of ['keyDown', 'keyUp']) {
-      await page.send('Input.dispatchKeyEvent', { type, key: name, code: name, windowsVirtualKeyCode: name === 'Escape' ? 27 : 9, modifiers });
+      await page.send('Input.dispatchKeyEvent', { type, key: name, code: name, windowsVirtualKeyCode: keyCodes[name], modifiers });
     }
   };
   const escape = () => key('Escape');
@@ -306,13 +314,14 @@ async function verifyUi(page: Cdp, abort: () => string | null, daemon: {
   await click('Documents');
   await contains('field-notes.txt');
   await click('New folder');
-  const setPath = (value: string) => input('dialog input', value);
+  const setPath = (value: string) => input('dialog textarea', value);
   await setPath('Documents/Smoke folder');
   await click('Create folder', 'dialog[open]');
   await contains('Smoke folder');
   await click('Rename or move', 'tr[data-entry="Documents/Smoke folder"]');
-  await setPath('Documents/Renamed folder');
-  await click('Rename or move', 'dialog[open]');
+  await setPath('Documents//./Renamed folder/');
+  await page.eval("document.querySelector('dialog textarea').focus()");
+  await key('Enter');
   await contains('Renamed folder');
   await click('Delete', 'tr[data-entry="Documents/Renamed folder"]');
   await contains('and everything inside it?', 'tr[data-entry="Documents/Renamed folder"]');

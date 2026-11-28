@@ -1,4 +1,5 @@
 import type { RemoteEntry, RemoteQuota } from '@shared/types';
+import { remotePath } from '@shared/remotePath';
 
 export const DIRECTORY_FRESH_MS = 60_000;
 export const QUOTA_FRESH_MS = 5 * 60_000;
@@ -16,13 +17,7 @@ export interface BrowserCacheOptions {
   maxDirectories?: number;
 }
 
-const dirKey = (remote: string, path: string) => `${remote}\0${path}`;
-
-export function parentRemotePath(path: string): string {
-  const trimmed = path.replace(/^\/+|\/+$/g, '');
-  const slash = trimmed.lastIndexOf('/');
-  return slash < 0 ? '' : trimmed.slice(0, slash);
-}
+const dirKey = (remote: string, path: string) => `${remote}\0${remotePath(path, true)}`;
 
 function createResourceCache<T>(now: () => number, freshMs: number, maxEntries = Infinity) {
   const records = new Map<string, CacheRecord<T>>();
@@ -99,9 +94,8 @@ export function createBrowserCache(options: BrowserCacheOptions = {}) {
       directories.invalidate(dirKey(remote, path));
     },
     invalidatePrefix(remote: string, prefix: string): void {
-      const normalized = prefix.replace(/^\/+|\/+$/g, '');
-      const exact = dirKey(remote, normalized);
-      const childPrefix = normalized ? `${exact}/` : `${remote}\0`;
+      const exact = dirKey(remote, prefix);
+      const childPrefix = exact === `${remote}\0` ? exact : `${exact}/`;
       directories.invalidateMatching((key) => key === exact || key.startsWith(childPrefix));
     },
     peekQuota: quotas.peek,
