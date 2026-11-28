@@ -45,7 +45,13 @@ export function openAuth(onChange: (session: AuthSession) => void, spawnProcess:
 
   function expire(session: Session): void {
     clearTimeout(session.timer);
-    session.timer = setTimeout(() => sessions.delete(session.view.id), TOKEN_TTL_MS);
+    session.timer = setTimeout(() => {
+      sessions.delete(session.view.id);
+      session.token = undefined;
+      if (session.view.state === 'completed') {
+        update(session, 'expired', null, 'Authorization expired. Authorize again to finish setup.');
+      }
+    }, TOKEN_TTL_MS);
     session.timer.unref();
   }
 

@@ -105,7 +105,12 @@
   background: var(--color-surface-input);
 }
 input, textarea { min-width: 0; }
-input::placeholder, textarea::placeholder { color: var(--color-text-muted); }
+input::placeholder, textarea::placeholder, .select-flyout .cujuju-select-flyout-placeholder {
+  color: var(--color-text);
+  font-style: italic;
+  opacity: 1;
+}
+.field-hint { color: var(--color-text-soft); }
 textarea { resize: vertical; min-height: 68px; }
 .button {
   display: inline-flex;
