@@ -63,6 +63,7 @@ interface Hooks {
 interface ManagedProcess {
   child: ChildProcess;
   finished: boolean;
+  ready: boolean;
   closed: Promise<void>;
 }
 
@@ -129,9 +130,11 @@ export function openDaemon(hooks: Hooks = {}) {
       const profiles = getSettings().mounts;
       const wasRunning = snapshot.daemon.state === 'running';
       const attached = snapshot.daemon.mode === 'attached';
+      const process = managed;
+      const firstReady = process !== undefined && !process.ready;
       if (!wasRunning) append({
         ts: new Date().toISOString(), level: 'info', source: 'app',
-        message: attached ? 'Attached to rclone.' : 'Started managed rclone.',
+        message: attached ? 'Attached to rclone.' : firstReady ? 'Started managed rclone.' : 'Reconnected to managed rclone.',
       });
       snapshot = {
         ...snapshot, dataError: errors.length ? errors.join(' ') : null,
@@ -146,7 +149,10 @@ export function openDaemon(hooks: Hooks = {}) {
         pid: pid.status === 'fulfilled' ? pid.value.pid : managed?.child.pid ?? null,
         configPath: paths.status === 'fulfilled' ? paths.value.config : snapshot.daemon.configPath,
       });
-      if (!wasRunning && managed) hooks.ready?.();
+      if (firstReady) {
+        process.ready = true;
+        hooks.ready?.();
+      }
     } catch (error) {
       if (client === rc && snapshot.daemon.error !== errorMessage(error)) disconnected('error', errorMessage(error));
     }
@@ -155,7 +161,7 @@ export function openDaemon(hooks: Hooks = {}) {
 
   function launch(path: string, args: string[], env: NodeJS.ProcessEnv, secrets: readonly string[] = []): ManagedProcess {
     const child = spawn(path, args, { env, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
-    const process: ManagedProcess = { child, finished: false, closed: Promise.resolve() };
+    const process: ManagedProcess = { child, finished: false, ready: false, closed: Promise.resolve() };
     process.closed = new Promise((resolve) => {
       child.on('error', () => {
         append({ ts: new Date().toISOString(), level: 'error', source: 'app', message: 'Could not run the rclone process.' });

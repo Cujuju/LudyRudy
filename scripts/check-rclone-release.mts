@@ -57,10 +57,9 @@ export function hasOpenBumpPr(prs: ReadonlyArray<BumpPr>, version: string): bool
   const parts = parseStableSemver(version);
   if (!parts) return false;
   const normalized = parts.join('.');
-  const versionInTitle = new RegExp('(?<![\\w.])v?' + parts.join('\\.') + '(?!\\w|\\.\\d)', 'i');
+  const bumpTitle = new RegExp('^(?:chore(?:\\([^)]+\\))?: )?bump rclone to v?' + parts.join('\\.') + '\\.?$', 'i');
   return prs.some(({ title = '', head }) =>
-    head?.ref === 'chore/rclone-v' + normalized ||
-    (/\brclone\b/i.test(title) && versionInTitle.test(title)));
+    head?.ref === 'chore/rclone-v' + normalized || bumpTitle.test(title.trim()));
 }
 
 export function signWebhookBody(body: string, secret: string): string {

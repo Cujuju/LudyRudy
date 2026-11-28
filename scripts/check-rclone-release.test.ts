@@ -67,10 +67,13 @@ describe('bump PR detection', () => {
   it('matches the branch or a case-insensitive title', () => {
     expect(hasOpenBumpPr([{ head: { ref: 'chore/rclone-v1.76.0' } }], current)).toBe(true);
     expect(hasOpenBumpPr([{ title: 'Bump RCLONE to V1.76.0.' }], current)).toBe(true);
+    expect(hasOpenBumpPr([{ title: 'chore: bump rclone to v1.76.0' }], current)).toBe(true);
+    expect(hasOpenBumpPr([{ title: 'chore(deps): bump rclone to 1.76.0' }], current)).toBe(true);
   });
 
   it.each([
     'Bump rclone to 1.76.01', 'Bump rclone to 11.76.0', 'Bump rclone to 1.76.0.1',
+    'fix: bump rclone to 1.76.0', 'Bump rclone to v1.76.0-beta.1', 'fix rclone v1.76.0 packaging documentation',
     'Bump rclone to v1.76.0rc', 'Bump rclone-helper2 to 1.76.01', 'Bump other to 1.76.0',
     'Bump myrclone to 1.76.0',
   ])('ignores %s', (title) => {

@@ -134,7 +134,11 @@ export function registerIpc({ daemon, mounts, jobs, auth, remotes, current, refr
   invoke('deleteJob', (id) => Promise.resolve(jobs.delete(id)));
   invoke('runJob', jobs.runJob);
   invoke('stopJob', jobs.stopJob);
-  invoke('browse', (remote, path) => daemon.forRemote(remote).list(remote, remotePath(path, true)));
+  invoke('browse', (remote, path) => {
+    const rc = daemon.forRemote(remote);
+    const isCrypt = daemon.current().remotes.some((item) => item.name === remote && item.isCrypt);
+    return rc.list(remote, remotePath(path, true), isCrypt);
+  });
   invoke('quota', (remote) => daemon.forRemote(remote).quota(remote));
   invoke('stat', (remote, path) => daemon.forRemote(remote).stat(remote, remotePath(path, true)));
   for (const [method, command] of [['mkdir', 'operations/mkdir'], ['deleteFile', 'operations/deletefile'], ['purge', 'operations/purge']] as const) {
