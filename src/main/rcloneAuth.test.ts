@@ -69,6 +69,32 @@ describe('openAuth', () => {
     await auth.stop();
   });
 
+  it('publishes expiry to the renderer and discards completed credentials', async () => {
+    vi.useFakeTimers();
+    const { child, stdout } = fakeChild();
+    const publish = vi.fn();
+    const auth = openAuth(publish, () => child);
+    try {
+      const session = auth.start('/bin/rclone', 'drive');
+      const token = JSON.stringify({ access_token: crypto.randomUUID() });
+      stdout.write('Paste the following into your remote machine --->\n');
+      stdout.write(token + '\n');
+      child.emit('close', 0);
+      expect(auth.token(session.id, 'drive')).toBe(token);
+
+      await vi.runOnlyPendingTimersAsync();
+      expect(publish).toHaveBeenLastCalledWith({
+        ...session, state: 'expired', error: 'Authorization expired. Authorize again to finish setup.',
+      });
+      expect(JSON.stringify(publish.mock.calls)).not.toContain(token);
+      expect(auth.status(session.id)).toBeNull();
+      expect(() => auth.token(session.id, 'drive')).toThrow('Authorization is incomplete or expired.');
+    } finally {
+      await auth.stop();
+      vi.useRealTimers();
+    }
+  });
+
   it('removes the temporary template file when authorization is cancelled', async () => {
     const { child } = fakeChild();
     const spawnMock = vi.fn<SpawnCall>(() => child);

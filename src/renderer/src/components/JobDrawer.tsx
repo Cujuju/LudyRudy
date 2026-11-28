@@ -47,16 +47,21 @@ export function JobDrawer(props: { job?: SyncJob; attached: boolean; close: () =
               <div class="field">
                 <label for={id}>{sentenceCase(field)}</label>
                 <div class="input-group">
-                  <input id={id} class="path" placeholder="remote:folder or absolute path" required value={draft[field]}
+                  <input id={id} class="path" aria-describedby={`${id}-hint`} required value={draft[field]}
                     onInput={(event) => setDraft(field, event.currentTarget.value)} />
                   <button type="button" class="button input-addon" aria-label={`Choose ${field} folder`}
                     disabled={props.attached || picker.pending()} onClick={() => choose(field)}><FolderOpen size={14} aria-hidden="true" /> Browse</button>
                 </div>
+                <small class="field-hint" id={`${id}-hint`}>Use remote:folder or an absolute path.</small>
               </div>
             );
           }}</For>
-          <label class="field">Exclude patterns<textarea placeholder="One rclone pattern per line" value={draft.excludes.join('\n')}
-            onInput={(event) => setDraft('excludes', event.currentTarget.value.split('\n'))} /></label>
+          <div class="field">
+            <label for={`${pathId}-excludes`}>Exclude patterns</label>
+            <textarea id={`${pathId}-excludes`} aria-describedby={`${pathId}-excludes-hint`} value={draft.excludes.join('\n')}
+              onInput={(event) => setDraft('excludes', event.currentTarget.value.split('\n'))} />
+            <small class="field-hint" id={`${pathId}-excludes-hint`}>One rclone pattern per line.</small>
+          </div>
           <Toggle label="Enabled" checked={draft.enabled} onChange={(value) => setDraft('enabled', value)} />
           <Toggle label="Dry run by default" checked={draft.dryRunDefault} onChange={(value) => setDraft('dryRunDefault', value)} />
         </fieldset>

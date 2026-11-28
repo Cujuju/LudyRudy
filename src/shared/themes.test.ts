@@ -17,4 +17,19 @@ describe('themes', () => {
       expect(darkTheme(theme).scheme).toBe('dark');
     }
   });
+
+  it.each(THEMES)('keeps placeholders and field hints readable in $id', ({ palette }) => {
+    const WCAG_NORMAL_TEXT_CONTRAST = 4.5;
+    const luminance = (hex: string) => {
+      const channels = hex.slice(1).match(/../g)!.map((value) => Number.parseInt(value, 16) / 255)
+        .map((value) => value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4);
+      const [red, green, blue] = channels;
+      return 0.2126 * red! + 0.7152 * green! + 0.0722 * blue!;
+    };
+    for (const [foreground, background] of [[palette.text, palette.input], [palette.soft, palette.raised]] as const) {
+      const brighter = Math.max(luminance(foreground), luminance(background));
+      const darker = Math.min(luminance(foreground), luminance(background));
+      expect((brighter + 0.05) / (darker + 0.05)).toBeGreaterThanOrEqual(WCAG_NORMAL_TEXT_CONTRAST);
+    }
+  });
 });

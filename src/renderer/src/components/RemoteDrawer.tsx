@@ -102,8 +102,10 @@ export function RemoteDrawer(props: { store: AppStore; remote?: RemoteSummary; c
   const busy = () => saveAction.pending();
   const provider = () => providers().find((item) => item.name === kind());
   const auth = () => {
+    const selected = session();
     const current = props.store.auth();
-    return current?.id === session()?.id ? current ?? session() : session();
+    if (selected?.provider !== kind()) return undefined;
+    return current?.id === selected?.id ? current ?? selected : selected;
   };
   const authActive = () => auth()?.state === 'starting' || auth()?.state === 'awaiting';
   const authComplete = () => auth()?.state === 'completed';

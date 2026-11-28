@@ -148,7 +148,7 @@ export interface LogLine {
 export interface AuthSession {
   id: string;
   provider: string;
-  state: 'starting' | 'awaiting' | 'completed' | 'failed' | 'cancelled';
+  state: 'starting' | 'awaiting' | 'completed' | 'expired' | 'failed' | 'cancelled';
   url: string | null;
   error: string | null;
 }

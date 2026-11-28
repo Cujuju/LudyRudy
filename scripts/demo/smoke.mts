@@ -135,6 +135,13 @@ async function verifyUi(page: Cdp, abort: () => string | null, daemon: {
   await openPage(page, 'Dashboard', abort);
   await click('New mount');
   await contains('VFS cache mode', 'dialog[open]');
+  const selectPlaceholderVisible = await page.eval<boolean>(`(() => {
+    const placeholder = document.querySelector('dialog[open] .cujuju-select-flyout-placeholder');
+    if (!placeholder) return false;
+    const style = getComputedStyle(placeholder);
+    return style.fontStyle === 'italic' && style.opacity === '1';
+  })()`);
+  if (!selectPlaceholderVisible) throw new Error('Select placeholder did not use readable placeholder styling.');
   await click('Cache max size', 'dialog[open]');
   await contains('10 GiB', flyout);
   await escape();
@@ -230,6 +237,12 @@ async function verifyUi(page: Cdp, abort: () => string | null, daemon: {
   await click('Close drawer', 'dialog[open]');
 
   await openPage(page, 'Browser', abort);
+  const placeholderVisible = await page.eval<boolean>(`(() => {
+    const field = document.querySelector('input[aria-label="Filter filenames"]');
+    const placeholder = getComputedStyle(field, '::placeholder');
+    return placeholder.color === getComputedStyle(field).color && placeholder.opacity === '1' && placeholder.fontStyle === 'italic';
+  })()`);
+  if (!placeholderVisible) throw new Error('Browser placeholder did not use the readable input text color.');
   await click('Documents');
   await contains('field-notes.txt');
   await click('New folder');
@@ -272,6 +285,12 @@ async function verifyUi(page: Cdp, abort: () => string | null, daemon: {
   await click('Run dry run');
   await contains('Finished (dry run)');
   await click('New job');
+  await contains('Use remote:folder or an absolute path.', 'dialog[open]');
+  const excludeHint = await page.eval<string>(`(() => {
+    const input = document.querySelector('dialog[open] textarea');
+    return document.getElementById(input.getAttribute('aria-describedby'))?.textContent;
+  })()`);
+  if (excludeHint !== 'One rclone pattern per line.') throw new Error('Job exclusions need a persistent accessible description.');
   await until('source folder picker', async () => (await page.eval<boolean>(`!!document.querySelector('dialog[open] button[aria-label="Choose source folder"]')`)) || null, abort);
   await click('Close drawer', 'dialog[open]');
 
