@@ -46,8 +46,9 @@ export function registerIpc({ daemon, mounts, jobs, auth, remotes, current, refr
       if (win && isMain(event.sender) && event.senderFrame === event.sender.mainFrame) handler(win);
     });
   };
-  const mutate = <Args extends unknown[], T>(action: (...args: Args) => T | Promise<T>) => async (...args: Args): Promise<T> => {
+  const mutate = <Args extends unknown[], T>(action: (...args: Args) => T | Promise<T>, onCommit?: () => void) => async (...args: Args): Promise<T> => {
     const value = await action(...args);
+    onCommit?.();
     await refresh();
     return value;
   };
@@ -96,11 +97,11 @@ export function registerIpc({ daemon, mounts, jobs, auth, remotes, current, refr
   invoke('completedTransfers', () => daemon.client().transferred());
   invoke('resetStats', mutate(async () => { await daemon.client().call('core/stats-reset'); }));
   invoke('listProviders', remotes.listProviders);
-  invoke('createRemote', mutate(remotes.createRemote));
-  invoke('updateRemote', mutate(remotes.updateRemote));
-  invoke('deleteRemote', mutate(remotes.deleteRemote));
+  invoke('createRemote', mutate(remotes.createRemote, daemon.invalidateRemoteInventory));
+  invoke('updateRemote', mutate(remotes.updateRemote, daemon.invalidateRemoteInventory));
+  invoke('deleteRemote', mutate(remotes.deleteRemote, daemon.invalidateRemoteInventory));
   invoke('testRemote', remotes.testRemote);
-  invoke('createCryptRemote', mutate(remotes.createCryptRemote));
+  invoke('createCryptRemote', mutate(remotes.createCryptRemote, daemon.invalidateRemoteInventory));
   invoke('generateSecret', (bits) => Promise.resolve(generateSecret(bits)));
   invoke('setConfigPassword', (password) => setConfigPassword(daemon, password));
   invoke('hasConfigPassword', async () => await readConfigPassword(managedPaths().configPath) !== null);

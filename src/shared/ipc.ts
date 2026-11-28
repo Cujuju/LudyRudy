@@ -9,6 +9,7 @@ export interface AppSnapshot {
   daemon: DaemonStatus;
   prereqs: PrereqStatus;
   remotes: RemoteSummary[];
+  remoteRevision: number;
   mounts: ActiveMount[];
   stats: TransferStats | null;
   logs: LogLine[];

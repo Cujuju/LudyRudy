@@ -88,6 +88,67 @@ describe('RcloneSupervisor', () => {
     expect(fetch.mock.calls.some(([url]) => /quit|unmount/.test(String(url)))).toBe(false);
   });
 
+  it('changes remote revision for a config-only edit without exposing the edited value', async () => {
+    mocks.argument.mockImplementation((name) => name === '--rclone-endpoint' ? 'http://localhost:4321' : undefined);
+    const fetch = fixture();
+    const fallback = fetch.getMockImplementation()!;
+    let dump = { drive: { type: 'drive', token: crypto.randomUUID() } };
+    fetch.mockImplementation((url, init) => new URL(String(url)).pathname === '/config/dump'
+      ? Promise.resolve(Response.json(dump)) : fallback(url, init));
+    const daemon = openDaemon();
+    await daemon.start();
+    const initial = daemon.current();
+    await daemon.refresh();
+    expect(daemon.current().remoteRevision).toBe(initial.remoteRevision);
+
+    dump = { drive: { type: 'drive', token: crypto.randomUUID() } };
+    await daemon.refresh();
+    expect(daemon.current().remoteRevision).toBeGreaterThan(initial.remoteRevision);
+    expect(daemon.current().remotes).toEqual(initial.remotes);
+    expect(JSON.stringify(daemon.current())).not.toContain(dump.drive.token);
+    await daemon.stop();
+  });
+
+  it('ignores remote inventory scans begun before a config write', async () => {
+    mocks.argument.mockImplementation((name) => name === '--rclone-endpoint' ? 'http://localhost:4321' : undefined);
+    const fetch = fixture();
+    const daemon = openDaemon();
+    await daemon.start();
+    const fallback = fetch.getMockImplementation()!;
+    let releaseOld!: (value: Response) => void;
+    let releaseNew!: (value: Response) => void;
+    let started!: () => void;
+    const oldStarted = new Promise<void>((resolve) => { started = resolve; });
+    const oldDump = new Promise<Response>((resolve) => { releaseOld = resolve; });
+    const newDump = new Promise<Response>((resolve) => { releaseNew = resolve; });
+    let delayOldDump = true;
+    fetch.mockImplementation((url, init) => {
+      if (new URL(String(url)).pathname !== '/config/dump') return fallback(url, init);
+      if (!delayOldDump) return newDump;
+      started();
+      return oldDump;
+    });
+
+    const initial = daemon.current();
+    let oldSettled = false;
+    const old = daemon.refresh().then((value) => { oldSettled = true; return value; });
+    await oldStarted;
+    delayOldDump = false;
+    daemon.invalidateRemoteInventory();
+    const replacement = daemon.refresh();
+    releaseOld(Response.json({ drive: { type: 'drive' } }));
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(oldSettled).toBe(false);
+    expect(daemon.current()).toBe(initial);
+
+    releaseNew(Response.json({ drive: { type: 'memory' } }));
+    await replacement;
+    expect(await old).toBe(daemon.current());
+    expect(daemon.current().remotes[0]?.type).toBe('memory');
+    expect(daemon.current().remoteRevision).toBe(initial.remoteRevision + 1);
+    await daemon.stop();
+  });
+
   it('does not send CLI credentials to a settings-only endpoint', async () => {
     mocks.argument.mockImplementation((name) => name === '--rclone-auth' ? `review:${crypto.randomUUID()}` : undefined);
     mocks.settings.mockReturnValue(normalizeSettings({ daemon: { endpoint: 'http://localhost:4321' } }));

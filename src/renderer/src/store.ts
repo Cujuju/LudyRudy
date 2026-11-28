@@ -1,4 +1,4 @@
-import { createSignal, onCleanup, onMount, untrack } from 'solid-js';
+import { createMemo, createSignal, onCleanup, onMount, untrack } from 'solid-js';
 import { LOG_CAPACITY, type AuthSession, type LogLine } from '@shared/types';
 import type { Page } from './components/Sidebar';
 import type { BuildInfo } from '@shared/buildInfo';
@@ -25,16 +25,15 @@ export function createAppStore() {
   const [ready, setReady] = createSignal(false);
   const [refreshing, setRefreshing] = createSignal(false);
   const browserCache = createBrowserCache();
-  let daemonSession = '';
   let disposed = false;
+  const browserSessionKey = (value?: AppSnapshot) => value?.daemon.state === 'running'
+    ? JSON.stringify([value.daemon.endpoint, value.daemon.pid, value.remoteRevision]) : undefined;
+  const browserKey = createMemo(() => browserSessionKey(snapshot()));
+  const browserSession = createMemo(() => ({ key: browserKey() }));
 
   const reportError = (cause: unknown) => setError(cause instanceof Error ? cause.message : String(cause));
   const applySnapshot = (value: AppSnapshot) => {
-    const nextSession = value.daemon.state === 'running' ? `${value.daemon.endpoint ?? ''}\0${value.daemon.pid ?? ''}` : '';
-    if (nextSession !== daemonSession) {
-      if (daemonSession) browserCache.clear();
-      daemonSession = nextSession;
-    }
+    if (browserSessionKey(value) !== untrack(browserKey)) browserCache.clear();
     setSnapshot(value);
   };
 
@@ -95,7 +94,7 @@ export function createAppStore() {
     }
   }
 
-  return { settings, settingsSection, setSettingsSection, build, snapshot, logs, auth, browserTarget, setBrowserTarget,
+  return { settings, browserSession, settingsSection, setSettingsSection, build, snapshot, logs, auth, browserTarget, setBrowserTarget,
     browserCache, launchAtLoginSupported, maximized, ready, settingsProblem, error, refreshing, updateGeneral, refresh };
 }
 

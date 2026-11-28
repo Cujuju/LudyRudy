@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { isIP } from 'node:net';
 import type { ActiveMount, CompletedTransfer, RemoteParameters, RemoteEntry, RemoteQuota, RemoteSummary, TransferStats, MountProfile } from '@shared/types';
 
@@ -167,9 +168,21 @@ export class RcloneClient {
   }
 
   async listRemotes(windows = false): Promise<RemoteSummary[]> {
+    return (await this.remoteInventory(windows)).remotes;
+  }
+
+  async remoteInventory(windows = false): Promise<{ remotes: RemoteSummary[]; fingerprint: string }> {
     const [{ remotes }, dump] = await Promise.all([this.call('config/listremotes'), this.call('config/dump')]);
-    return (remotes ?? []).map((name) => {
-      const raw = Object.hasOwn(dump, name) ? dump[name] ?? {} : {};
+    const names = remotes ?? [];
+    const rawConfig = (name: string) => Object.hasOwn(dump, name) ? dump[name] ?? {} : {};
+    const inventory = [...names].sort().map((name) => {
+      const raw = rawConfig(name);
+      return [name, Object.keys(raw).sort().map((key) => [key, raw[key]])];
+    });
+    // Keep the config fingerprint in main; the renderer receives only a revision counter.
+    const fingerprint = createHash('sha256').update(JSON.stringify(inventory)).digest('hex');
+    const summaries = names.map((name) => {
+      const raw = rawConfig(name);
       const config = Object.fromEntries(SAFE_CONFIG_KEYS.flatMap((key) => typeof raw[key] === 'string' ? [[key, raw[key]]] : []));
       const isCrypt = config.type === 'crypt';
       const target = describeFs(isCrypt && typeof raw.remote === 'string' ? raw.remote : '', windows);
@@ -182,6 +195,7 @@ export class RcloneClient {
         config,
       };
     });
+    return { remotes: summaries, fingerprint };
   }
 
   async stats(windows = false): Promise<TransferStats> {
