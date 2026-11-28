@@ -4,6 +4,7 @@ import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, 
 import { dirname, resolve } from 'node:path';
 import { normalizeSettings, type AppSettings } from '@shared/settings';
 import { profileFile } from './paths';
+import { createSerialQueue } from './serialQueue';
 
 export function writeFileAtomic(file: string, value: Buffer | string): void {
   mkdirSync(dirname(file), { recursive: true });
@@ -61,12 +62,7 @@ async function requireEncryption(): Promise<void> {
 const digest = (value: string | Buffer) => createHash('sha256').update(value).digest('hex');
 const secretFile = (path: string) => profileFile(`rclone-secret-${digest(existsSync(path) ? realpathSync(path) : resolve(path))}`);
 
-let secretOperation = Promise.resolve();
-function withSecrets<T>(operation: () => Promise<T>): Promise<T> {
-  const next = secretOperation.then(operation);
-  secretOperation = next.then(() => undefined, () => undefined);
-  return next;
-}
+const withSecrets = createSerialQueue();
 
 async function decrypt(data: Buffer): Promise<string> {
   await requireEncryption();

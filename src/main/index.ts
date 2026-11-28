@@ -7,6 +7,7 @@ import { registerIpc } from './ipc';
 import { openJobManager } from './jobManager';
 import { openMountManager, type Notify } from './mountManager';
 import { startNotices } from './notifier';
+import { supportsLaunchAtLogin } from './paths';
 import { openAuth } from './rcloneAuth';
 import { errorMessage, openDaemon } from './rcloneSupervisor';
 import { openRemotes } from './remoteService';
@@ -19,7 +20,7 @@ let lastLoginSettings: string | undefined;
 const LOGIN_MINIMIZED_ARG = '--login-minimized';
 
 function applyLoginSettings(): void {
-  if (!app.isPackaged || app.commandLine.hasSwitch('user-data-dir') || process.platform === 'linux') return;
+  if (!supportsLaunchAtLogin()) return;
   const { launchAtLogin, startMinimized } = getSettings().general;
   const signature = JSON.stringify([launchAtLogin, startMinimized]);
   if (lastLoginSettings === signature) return;

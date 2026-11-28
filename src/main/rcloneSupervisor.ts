@@ -11,6 +11,7 @@ import { argument, profileFile, resolveRclone } from './paths';
 import { localVersion, mountBackend } from './prereqs';
 import { RcloneClient, remoteFs, validRemoteName } from './rcloneClient';
 import { getSettings, readConfigPassword } from './settingsStore';
+import { createSerialQueue } from './serialQueue';
 
 const LOOPBACK = '127.0.0.1';
 const RC_CREDENTIAL_BYTES = 32;
@@ -93,7 +94,7 @@ export function openDaemon(hooks: Hooks = {}) {
   let rc: RcloneClient | undefined;
   let managed: ManagedProcess | undefined;
   let refreshRequest: Promise<AppSnapshot> | undefined;
-  let transition = Promise.resolve();
+  const serialize = createSerialQueue();
   const probe = (path: string | null) => {
     void localVersion(path).then((version) => {
       if (snapshot.prereqs.rclonePath === path) snapshot = { ...snapshot, prereqs: { ...snapshot.prereqs, rcloneVersion: version } };
@@ -271,12 +272,6 @@ export function openDaemon(hooks: Hooks = {}) {
       disconnected('error', errorMessage(error));
       throw error;
     }
-  }
-
-  function serialize<T>(action: () => Promise<T>): Promise<T> {
-    const next = transition.then(action);
-    transition = next.then(() => undefined, () => undefined);
-    return next;
   }
 
   return {

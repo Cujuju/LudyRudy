@@ -18,6 +18,7 @@ export function createAppStore() {
   const [logs, setLogs] = createSignal<LogLine[]>([]);
   const [auth, setAuth] = createSignal<AuthSession>();
   const [browserTarget, setBrowserTarget] = createSignal<{ remote: string; path: string }>();
+  const [launchAtLoginSupported, setLaunchAtLoginSupported] = createSignal(false);
   const [maximized, setMaximized] = createSignal(false);
   const [error, setError] = createSignal('');
   const [ready, setReady] = createSignal(false);
@@ -64,6 +65,7 @@ export function createAppStore() {
       if (!settingsUpdated) setSettings(initial.settings);
       if (!maximizeUpdated) setMaximized(initial.maximized);
       setBuild(initial.build);
+      setLaunchAtLoginSupported(initial.launchAtLoginSupported);
       setReady(true);
     }).catch(reportError);
   });
@@ -91,7 +93,7 @@ export function createAppStore() {
   }
 
   return { settings, settingsSection, setSettingsSection, build, snapshot, logs, auth, browserTarget, setBrowserTarget,
-    browserCache, maximized, ready, error, refreshing, updateGeneral, refresh };
+    browserCache, launchAtLoginSupported, maximized, ready, error, refreshing, updateGeneral, refresh };
 }
 
 export type AppStore = ReturnType<typeof createAppStore>;

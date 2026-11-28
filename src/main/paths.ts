@@ -3,6 +3,14 @@ import { accessSync, constants, statSync } from 'node:fs';
 import { delimiter, isAbsolute, join } from 'node:path';
 import type { DaemonStatus } from '@shared/types';
 
+export function supportsLaunchAtLogin(
+  platform = process.platform,
+  packaged = app.isPackaged,
+  customProfile = app.commandLine.hasSwitch('user-data-dir') || argument('--user-data-dir') !== undefined,
+): boolean {
+  return packaged && !customProfile && (platform === 'darwin' || platform === 'win32');
+}
+
 export function argument(name: string): string | undefined {
   const index = process.argv.findIndex((value) => value === name || value.startsWith(`${name}=`));
   if (index < 0) return undefined;

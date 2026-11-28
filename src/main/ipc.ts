@@ -8,6 +8,7 @@ import { setConfigPassword } from './configPassword';
 import type { openJobManager } from './jobManager';
 import type { openMountManager } from './mountManager';
 import { nativeFiles, remotePath } from './nativeFiles';
+import { supportsLaunchAtLogin } from './paths';
 import { describeFs, NO_CLOBBER, RcloneClient, remoteFs } from './rcloneClient';
 import { managedPaths, type RcloneSupervisor } from './rcloneSupervisor';
 import type { RcloneAuth } from './rcloneAuth';
@@ -51,7 +52,7 @@ export function registerIpc({ daemon, mounts, jobs, auth, remotes, current, refr
   };
   invoke('initialize', () => Promise.resolve({
     settings: getSettings(), build: parseBuildInfo(__APP_VERSION__, __APP_BUILD__),
-    snapshot: current(), maximized: mainWindow()?.isMaximized() ?? false,
+    snapshot: current(), launchAtLoginSupported: supportsLaunchAtLogin(), maximized: mainWindow()?.isMaximized() ?? false,
   }));
   invoke('refresh', async () => { await daemon.refreshLocal(); return refresh(); });
   invoke('updateGeneral', (patch) => Promise.resolve(updateSettings({ general: { ...getSettings().general, ...patch } })));

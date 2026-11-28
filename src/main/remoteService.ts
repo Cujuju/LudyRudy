@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto';
 import type { CryptDraft, ProviderInfo, RemoteDraft, RemoteParameters, RemoteSummary } from '@shared/types';
 import type { RcloneAuth } from './rcloneAuth';
 import { RcloneClient, remoteFs, validRemoteName } from './rcloneClient';
+import { createSerialQueue } from './serialQueue';
 
 const POPULAR = ['drive', 'crypt', 's3', 'b2', 'onedrive', 'dropbox', 'sftp', 'webdav', 'box', 'pcloud', 'mega', 'local'];
 const OPTION_FIELDS = ['Name', 'Help', 'Type', 'Required', 'IsPassword', 'Advanced', 'Provider', 'Exclusive'];
@@ -72,12 +73,7 @@ function validateCryptParameters(remotes: RemoteSummary[], name: string, config:
 }
 
 export function openRemotes(client: () => RcloneClient, auth: Pick<RcloneAuth, 'token'>) {
-  let writes = Promise.resolve();
-  function write(action: () => Promise<void>): Promise<void> {
-    const next = writes.then(action);
-    writes = next.catch(() => { /* Later changes can proceed after a failed write. */ });
-    return next;
-  }
+  const write = createSerialQueue();
 
   async function listProviders(): Promise<ProviderInfo[]> {
     const { providers } = await client().call('config/providers');

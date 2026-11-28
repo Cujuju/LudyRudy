@@ -7,6 +7,7 @@ import type { NoticeKind } from '@shared/notice';
 import { validateOptionMap } from '@shared/mountOptions';
 import { remoteFs, type RcMountOptions, type RcloneClient } from './rcloneClient';
 import { requireRemoteName } from './remoteService';
+import { createSerialQueue } from './serialQueue';
 
 export type Notify = (kind: NoticeKind, title: string, body: string) => void;
 
@@ -47,12 +48,7 @@ export function mountOptions(profile: MountProfile): RcMountOptions {
 }
 
 export function openMountManager(context: MountContext) {
-  let operation = Promise.resolve();
-  function serialize<T>(action: () => Promise<T>): Promise<T> {
-    const next = operation.then(action);
-    operation = next.then(() => undefined, () => undefined);
-    return next;
-  }
+  const serialize = createSerialQueue();
 
   function profileFor(id: string): MountProfile {
     const profile = context.profiles().find((entry) => entry.id === id);

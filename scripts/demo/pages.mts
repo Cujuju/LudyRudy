@@ -9,7 +9,7 @@ const LIVE_CONTENT: Record<typeof PAGES[number], string[]> = {
   Browser: ['schedule.pdf', '42 GiB used'],
   Transfers: ['Photos/field-trip.zip', 'Photos to Encrypted Vault', 'Work Mirror', 'Documents/reports.zip'],
   Logs: ['Attached to rclone'],
-  Settings: ['Window behavior', 'Launch at login'],
+  Settings: ['Window behavior', 'Start minimized'],
 };
 
 export async function openPage(cdp: Cdp, label: typeof PAGES[number], abort: () => string | null) {
