@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { AppSnapshot } from '@shared/ipc';
+import { defaultProfileMountType } from '@shared/mountCapabilities';
 import type { RemoteSummary } from '@shared/types';
 import { daemonSourceLabel, deriveOnboarding } from './onboarding';
 
@@ -8,6 +9,7 @@ const snapshot: AppSnapshot = {
   daemon: {
     state: 'running', endpoint: null, pid: null, version: 'v1.73.0', binaryPath: null,
     binarySource: 'bundled', configPath: null, configEncrypted: null, attached: false, mode: 'managed', hostPlatform: 'win32', error: null,
+    mountTypes: ['cmount'],
   },
   prereqs: {
     platform: 'win32', rcloneInstalled: true, rcloneVersion: null, rclonePath: null,
@@ -119,6 +121,15 @@ describe('deriveOnboarding', () => {
       state: 'current',
       action: { kind: 'install-mount-backend', label: 'Install WinFsp' },
     });
+  });
+
+  it('offers a mount profile when managed macOS advertises built-in NFS without FUSE', () => {
+    const daemon = { ...snapshot.daemon, hostPlatform: 'darwin', mountTypes: ['cmount', 'nfsmount'] };
+    const prereqs = { ...snapshot.prereqs, mountBackend: { ...snapshot.prereqs.mountBackend, available: false } };
+    expect(deriveOnboarding({ ...snapshot, daemon, prereqs, remotes: [remote] }).steps[2]?.action?.kind).toBe('new-mount');
+    expect(defaultProfileMountType(daemon, false)).toBe('nfsmount');
+    expect(defaultProfileMountType(daemon, true)).toBeUndefined();
+    expect(defaultProfileMountType({ ...daemon, mode: 'attached', mountTypes: ['nfsmount'] }, false)).toBe('nfsmount');
   });
 
   it('falls back to Open browser when a remote exists and no mount installer URL is available', () => {

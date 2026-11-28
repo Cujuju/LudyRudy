@@ -12,6 +12,7 @@ export interface DaemonStatus {
   attached: boolean;
   mode: 'attached' | 'managed';
   hostPlatform: string | null;
+  mountTypes: string[] | null;
   error: string | null;
 }
 

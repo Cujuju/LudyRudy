@@ -88,6 +88,7 @@ export function openDaemon(hooks: Hooks = {}) {
     daemon: {
       state: 'stopped', mode: configuredEndpoint() === undefined ? 'managed' : 'attached',
       hostPlatform: configuredEndpoint() === undefined ? process.platform : null,
+      mountTypes: null,
       endpoint: null, pid: null, version: null, ...binary,
       configPath: null, configEncrypted: null, attached: false, error: null,
     },
@@ -123,7 +124,7 @@ export function openDaemon(hooks: Hooks = {}) {
 
   function disconnected(state: 'stopped' | 'error', error: string | null): void {
     snapshot = { ...snapshot, remotes: [], mounts: [], stats: null, dataError: null };
-    status({ state, attached: false, pid: null, error, hostPlatform: snapshot.daemon.mode === 'managed' ? process.platform : null });
+    status({ state, attached: false, pid: null, error, mountTypes: null, hostPlatform: snapshot.daemon.mode === 'managed' ? process.platform : null });
     if (error) append({ ts: new Date().toISOString(), level: 'error', message: error, source: 'app' });
   }
 
@@ -132,6 +133,7 @@ export function openDaemon(hooks: Hooks = {}) {
     try {
       const { version, os } = await client.call('core/version');
       if (typeof version !== 'string' || !version) throw new Error('rclone returned no version.');
+      const reportedVersion = /^v[\w.+-]+$/.test(version) ? version : null;
       const hostPlatform = snapshot.daemon.mode === 'managed' ? process.platform
         : os === 'windows' ? 'win32' : typeof os === 'string' && /^[a-z][a-z0-9]*$/.test(os) ? os : null;
       const [remotes, mounts, stats, pid, paths] = await Promise.allSettled([
@@ -142,6 +144,10 @@ export function openDaemon(hooks: Hooks = {}) {
         client.stats(hostPlatform === 'win32'),
         client.call('core/pid'), client.call('config/paths'),
       ]);
+      const daemonPid = pid.status === 'fulfilled' ? pid.value.pid : managed?.child.pid ?? null;
+      const mountTypes = snapshot.daemon.mountTypes === null || daemonPid !== snapshot.daemon.pid ||
+        hostPlatform !== snapshot.daemon.hostPlatform || reportedVersion !== snapshot.daemon.version
+        ? await client.mountTypes().catch(() => null) : snapshot.daemon.mountTypes;
       if (client !== rc) return snapshot;
       if (epoch !== inventoryEpoch) return refreshRequest ?? snapshot;
       const errors = [remotes, mounts, stats].flatMap((result) => result.status === 'rejected' ? [errorMessage(result.reason)] : []);
@@ -165,8 +171,8 @@ export function openDaemon(hooks: Hooks = {}) {
         stats: stats.status === 'fulfilled' ? stats.value : snapshot.stats,
       };
       status({
-        state: 'running', version: /^v[\w.+-]+$/.test(version) ? version : null, attached, hostPlatform, error: null,
-        pid: pid.status === 'fulfilled' ? pid.value.pid : managed?.child.pid ?? null,
+        state: 'running', version: reportedVersion, attached, hostPlatform, error: null,
+        pid: daemonPid, mountTypes,
         configPath: paths.status === 'fulfilled' ? paths.value.config : snapshot.daemon.configPath,
       });
       if (firstReady) {

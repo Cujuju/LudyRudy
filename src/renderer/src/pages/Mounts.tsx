@@ -18,7 +18,8 @@ export function Mounts(props: PageProps) {
       <MountLedger store={props.store} navigate={props.navigate} detailed edit={setDrawer} add={() => setDrawer('new')} />
       <Show when={drawer()} keyed>{(profile) => (
         <MountDrawer profile={profile === 'new' ? undefined : profile} remotes={props.store.snapshot()?.remotes ?? []}
-          cache={props.store.settings().daemon.defaultVfsCacheMode} daemon={props.store.snapshot()?.daemon} close={() => setDrawer(undefined)} />
+          cache={props.store.settings().daemon.defaultVfsCacheMode} daemon={props.store.snapshot()?.daemon}
+          backendAvailable={props.store.snapshot()?.prereqs.mountBackend.available ?? false} close={() => setDrawer(undefined)} />
       )}</Show>
     </>
   );

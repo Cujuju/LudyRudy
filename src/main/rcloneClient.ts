@@ -231,6 +231,15 @@ export class RcloneClient {
     return (await this.observeMounts(windows)).map(({ view }) => view);
   }
 
+  async mountTypes(): Promise<string[]> {
+    const { mountTypes } = await this.call('mount/types');
+    if (mountTypes === null) return [];
+    if (!Array.isArray(mountTypes) || !mountTypes.every((type) => typeof type === 'string')) {
+      throw new Error('rclone returned an invalid list of mount types.');
+    }
+    return mountTypes;
+  }
+
   async list(remote: string, path: string, showEncrypted = false): Promise<RemoteEntry[]> {
     const { list } = await this.call('operations/list', {
       fs: remoteFs(remote), remote: path, _config: { UseServerModTime: true },

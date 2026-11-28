@@ -47,6 +47,7 @@ function fixture(quit: () => void = () => {}, os?: string) {
       case '/config/listremotes': return Response.json({ remotes: ['drive'] });
       case '/config/dump': return Response.json({ drive: { type: 'drive' } });
       case '/mount/listmounts': return Response.json({ mountPoints: [] });
+      case '/mount/types': return Response.json({ mountTypes: ['cmount', 'nfsmount'] });
       case '/core/stats': return Response.json({ bytes: 0 });
       case '/core/bwlimit': return Response.json({ rate: 'off' });
       case '/core/quit': quit(); return Response.json({});
@@ -79,10 +80,12 @@ describe('RcloneSupervisor', () => {
     const fetch = fixture(undefined, 'windows');
     const daemon = openDaemon();
     await daemon.start();
-    expect(daemon.current().daemon).toMatchObject({ mode: 'attached', state: 'running', attached: true, endpoint: 'http://localhost:4321/', hostPlatform: 'win32' });
+    expect(daemon.current().daemon).toMatchObject({ mode: 'attached', state: 'running', attached: true, endpoint: 'http://localhost:4321/', hostPlatform: 'win32', mountTypes: ['cmount', 'nfsmount'] });
+    await daemon.refresh();
+    expect(fetch.mock.calls.filter(([url]) => String(url).endsWith('/mount/types'))).toHaveLength(1);
     await daemon.restart();
     await daemon.stop();
-    expect(daemon.current().daemon).toMatchObject({ state: 'stopped', attached: false, pid: null, hostPlatform: null });
+    expect(daemon.current().daemon).toMatchObject({ state: 'stopped', attached: false, pid: null, hostPlatform: null, mountTypes: null });
     expect(mocks.spawn).not.toHaveBeenCalled();
     expect(mocks.localVersion).not.toHaveBeenCalled();
     expect(fetch.mock.calls.some(([url]) => /quit|unmount/.test(String(url)))).toBe(false);

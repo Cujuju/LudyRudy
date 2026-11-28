@@ -12,14 +12,14 @@ const draft: MountProfile = {
   extraFlags: ['-o', 'ro'], mountType: 'cmount',
 };
 
-function fixture(initial: MountProfile[], managed = false, platform: string = process.platform) {
+function fixture(initial: MountProfile[], managed = false, platform: string = process.platform, backendAvailable = true, types = ['cmount']) {
   const active = new Map<string, { Fs: string; MountPoint: string }>();
   const fetch = vi.fn<typeof globalThis.fetch>().mockImplementation(async (input, opts) => {
     const args = JSON.parse(String(opts?.body));
     switch (new URL(String(input)).pathname) {
       case '/config/listremotes': return Response.json({ remotes: ['vault'] });
       case '/mount/listmounts': return Response.json({ mountPoints: [...active.values()] });
-      case '/mount/types': return Response.json({ mountTypes: ['cmount'] });
+      case '/mount/types': return Response.json({ mountTypes: types });
       case '/mount/mount':
         active.set(args.mountPoint, { Fs: args.fs, MountPoint: args.mountPoint });
         return Response.json({ mountPoint: args.mountPoint });
@@ -35,7 +35,8 @@ function fixture(initial: MountProfile[], managed = false, platform: string = pr
   const rc = new RcloneClient('http://localhost:5572');
   const mounts = openMountManager({
     client: () => rc, profiles: () => profiles, save: (next) => { profiles = next; },
-    managed: () => managed, platform: () => platform, notify, reveal, defaults: () => 'full',
+    managed: () => managed, platform: () => platform, mountBackendAvailable: () => backendAvailable,
+    notify, reveal, defaults: () => 'full',
   });
   return { mounts, fetch, notify, reveal, active, rc };
 }
@@ -43,6 +44,23 @@ function fixture(initial: MountProfile[], managed = false, platform: string = pr
 afterEach(() => vi.unstubAllGlobals());
 
 describe('MountManager', () => {
+  it.skipIf(process.platform === 'win32')('mounts advertised NFS on managed macOS without FUSE while blocking FUSE mount types', async () => {
+    const directory = await mkdtemp(join(process.cwd(), '.mount-test-'));
+    try {
+      const mountPoint = join(directory, 'vault');
+      const profile = { ...draft, mountPoint, mountType: 'nfsmount' };
+      const { mounts, active, fetch } = fixture([profile], true, 'darwin', false, ['cmount', 'nfsmount']);
+      await expect(mounts.mountProfile(profile.id)).resolves.toBe(await realpath(directory) + '/vault');
+      expect(JSON.parse(String(fetch.mock.lastCall?.[1]?.body))).toMatchObject({ mountType: 'nfsmount' });
+      active.clear();
+      mounts.save({ ...profile, mountType: 'cmount' });
+      await expect(mounts.mountProfile(profile.id)).rejects.toThrow('requires a local mount backend');
+      expect(active.size).toBe(0);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   it('maps vfs and mount settings to the rclone option names', () => {
     expect(mountOptions(draft)).toEqual({
       fs: 'vault:subdir', mountPoint: draft.mountPoint, mountType: 'cmount', mountOpt: { ExtraFlags: ['-o', 'ro'] },

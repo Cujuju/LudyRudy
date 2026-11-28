@@ -5,6 +5,7 @@ import type { MountProfile } from '@shared/types';
 import { VFS_CACHE_MODES } from '@shared/types';
 import type { NoticeKind } from '@shared/notice';
 import { validateOptionMap } from '@shared/mountOptions';
+import { mountPrerequisitesMet, mountTypeAdvertised } from '@shared/mountCapabilities';
 import { isDaemonAbsolute } from './daemonPaths';
 import { mountIdentity, mountPath } from './mountIdentity';
 import { remoteFs, validRemoteName, type RcMountOptions, type RcloneClient } from './rcloneClient';
@@ -18,6 +19,7 @@ interface MountContext {
   save: (profiles: MountProfile[]) => void;
   defaults: () => MountProfile['vfsCacheMode'];
   managed: () => boolean;
+  mountBackendAvailable: () => boolean;
   platform: () => string | null;
   notify: Notify;
   reveal: (path: string) => Promise<string>;
@@ -80,9 +82,9 @@ export function openMountManager(context: MountContext) {
       if (windows && mounts.some(({ view }) => identity.checkPoint(view.mountPoint)?.toLowerCase() === path.toLowerCase())) {
         throw new Error('A mount already uses a path that differs only in letter case.');
       }
-      if (options.mountType) {
-        const { mountTypes } = await rc.call('mount/types');
-        if (!mountTypes?.includes(options.mountType)) throw new Error('This mount type is unavailable in the daemon.');
+      if (!mountTypeAdvertised(options.mountType, await rc.mountTypes())) throw new Error('This mount type is unavailable in the daemon.');
+      if (!mountPrerequisitesMet(options.mountType, platform, local, context.mountBackendAvailable())) {
+        throw new Error('This mount type requires a local mount backend. Choose an available type or install its prerequisites.');
       }
       if (rc !== context.client()) throw new Error('The rclone daemon changed during mount setup.');
       const { mountPoint } = await rc.call('mount/mount', options);
