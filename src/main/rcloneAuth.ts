@@ -1,5 +1,5 @@
 import { spawn, type ChildProcess, type SpawnOptions } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -7,6 +7,15 @@ import { createInterface } from 'node:readline';
 import { providerName } from '@shared/providers';
 import type { AuthSession } from '@shared/types';
 import { renderOAuthTemplate } from './oauthTemplate';
+
+export interface AuthorizationConfig {
+  provider: string;
+  prefix: string;
+  values: Record<string, string>;
+  remote?: string;
+  client: object;
+  daemonIdentity: string;
+}
 
 const AUTH_TIMEOUT_MS = 5 * 60_000;
 const TOKEN_TTL_MS = 10 * 60_000;
@@ -17,6 +26,8 @@ const TEMPLATE_FILE_MODE = 0o600;
 
 interface Session {
   view: AuthSession;
+  client: object;
+  binding: string;
   token?: string;
   child?: ChildProcess;
   timer?: NodeJS.Timeout;
@@ -34,6 +45,20 @@ function cleanupTemplate(dir?: string): void {
 }
 
 type AuthSpawn = (command: string, args: readonly string[], options: SpawnOptions) => ChildProcess;
+
+function authorizationBinding(config: AuthorizationConfig): string {
+  const entries = Object.keys(config.values).sort().map((key) => [key, config.values[key]]);
+  return createHash('sha256').update(JSON.stringify([config.provider, config.prefix, config.remote, config.daemonIdentity, entries])).digest('hex');
+}
+
+function authorizationEnv(config: AuthorizationConfig): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = Object.fromEntries(Object.entries(process.env).filter(([name]) => !/^RCLONE_/i.test(name)));
+  const prefix = config.prefix.toUpperCase().replaceAll('-', '_');
+  for (const [name, value] of Object.entries(config.values)) {
+    if (value !== '') env[`RCLONE_${prefix}_${name.toUpperCase()}`] = value;
+  }
+  return env;
+}
 
 export function openAuth(onChange: (session: AuthSession) => void, spawnProcess: AuthSpawn = spawn) {
   const sessions = new Map<string, Session>();
@@ -56,8 +81,9 @@ export function openAuth(onChange: (session: AuthSession) => void, spawnProcess:
   }
 
   return {
-    start(binary: string, provider: string): AuthSession {
-      if (!/^[a-z][a-z0-9_]*$/i.test(provider)) throw new Error('Invalid OAuth provider.');
+    start(binary: string, config: AuthorizationConfig): AuthSession {
+      const { provider, prefix, client } = config;
+      if (!/^[a-z][a-z0-9_ -]*$/i.test(provider) || !/^[a-z][a-z0-9_-]*$/i.test(prefix)) throw new Error('Invalid OAuth provider.');
       if ([...sessions.values()].some((session) => session.child)) throw new Error('An authorization is already in progress.');
       const id = randomUUID();
       const templateDir = mkdtempSync(join(tmpdir(), TEMPLATE_DIR_PREFIX));
@@ -68,13 +94,14 @@ export function openAuth(onChange: (session: AuthSession) => void, spawnProcess:
         child = spawnProcess(binary, [
           'authorize', provider, '--auth-no-open-browser', '--config', '', '--log-level', 'INFO', '--template', templatePath,
         ], {
-          windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'],
+          windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'], env: authorizationEnv(config),
         });
       } catch (error) {
         cleanupTemplate(templateDir);
         throw error;
       }
-      const session: Session = { view: { id, provider, state: 'starting', url: null, error: null }, child, templateDir };
+      const session: Session = { view: { id, provider, state: 'starting', url: null, error: null },
+        client, binding: authorizationBinding(config), child, templateDir };
       sessions.set(id, session);
       let acceptingToken = false;
       function inspect(line: string): void {
@@ -140,9 +167,12 @@ export function openAuth(onChange: (session: AuthSession) => void, spawnProcess:
     async stop(): Promise<void> {
       await Promise.all([...sessions.keys()].map((id) => this.cancel(id)));
     },
-    token(id: string, provider: string): string {
+    token(id: string, config: AuthorizationConfig): string {
       const session = sessions.get(id);
-      if (session?.view.provider !== provider || session.view.state !== 'completed' || !session.token) throw new Error('Authorization is incomplete or expired.');
+      if (session?.view.state !== 'completed' || !session.token) throw new Error('Authorization is incomplete or expired.');
+      if (session.client !== config.client || session.binding !== authorizationBinding(config)) {
+        throw new Error('Authorization settings changed. Authorize again before saving.');
+      }
       return session.token;
     },
   };

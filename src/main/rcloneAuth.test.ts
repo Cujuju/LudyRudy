@@ -4,7 +4,7 @@ import { PassThrough } from 'node:stream';
 import type { ChildProcess, SpawnOptions } from 'node:child_process';
 import { describe, expect, it, vi } from 'vitest';
 import { renderOAuthTemplate } from './oauthTemplate';
-import { openAuth } from './rcloneAuth';
+import { type AuthorizationConfig, openAuth } from './rcloneAuth';
 
 function fakeChild() {
   const child = new EventEmitter() as ChildProcess & EventEmitter;
@@ -20,6 +20,7 @@ function fakeChild() {
 }
 
 type SpawnCall = (command: string, args: readonly string[], options: SpawnOptions) => ChildProcess;
+const drive: AuthorizationConfig = { provider: 'drive', prefix: 'drive', values: {}, client: {}, daemonIdentity: 'daemon' };
 
 describe('oauthTemplate', () => {
   it('renders a Go html/template with success and error branches', () => {
@@ -47,7 +48,7 @@ describe('openAuth', () => {
     const updates: string[] = [];
     const auth = openAuth((session) => updates.push(session.state), spawnMock);
 
-    const session = auth.start('/bin/rclone', 'drive');
+    const session = auth.start('/bin/rclone', drive);
     const [, args] = spawnMock.mock.calls[0]!;
     const flagIndex = args.indexOf('--template');
     expect(flagIndex).toBeGreaterThan(-1);
@@ -64,7 +65,7 @@ describe('openAuth', () => {
 
     expect(existsSync(templatePath)).toBe(false);
     expect(auth.status(session.id)?.state).toBe('completed');
-    expect(auth.token(session.id, 'drive')).toBe('{"access_token":"tok"}');
+    expect(auth.token(session.id, drive)).toBe('{"access_token":"tok"}');
     expect(updates).toEqual(['awaiting', 'completed']);
     await auth.stop();
   });
@@ -75,12 +76,12 @@ describe('openAuth', () => {
     const publish = vi.fn();
     const auth = openAuth(publish, () => child);
     try {
-      const session = auth.start('/bin/rclone', 'drive');
+      const session = auth.start('/bin/rclone', drive);
       const token = JSON.stringify({ access_token: crypto.randomUUID() });
       stdout.write('Paste the following into your remote machine --->\n');
       stdout.write(token + '\n');
       child.emit('close', 0);
-      expect(auth.token(session.id, 'drive')).toBe(token);
+      expect(auth.token(session.id, drive)).toBe(token);
 
       await vi.runOnlyPendingTimersAsync();
       expect(publish).toHaveBeenLastCalledWith({
@@ -88,7 +89,7 @@ describe('openAuth', () => {
       });
       expect(JSON.stringify(publish.mock.calls)).not.toContain(token);
       expect(auth.status(session.id)).toBeNull();
-      expect(() => auth.token(session.id, 'drive')).toThrow('Authorization is incomplete or expired.');
+      expect(() => auth.token(session.id, drive)).toThrow('Authorization is incomplete or expired.');
     } finally {
       await auth.stop();
       vi.useRealTimers();
@@ -100,7 +101,7 @@ describe('openAuth', () => {
     const spawnMock = vi.fn<SpawnCall>(() => child);
     const auth = openAuth(() => undefined, spawnMock);
 
-    const session = auth.start('/bin/rclone', 'onedrive');
+    const session = auth.start('/bin/rclone', { ...drive, provider: 'onedrive', prefix: 'onedrive' });
     const [, args] = spawnMock.mock.calls[0]!;
     const templatePath = args[args.indexOf('--template') + 1]!;
     expect(existsSync(templatePath)).toBe(true);
@@ -108,5 +109,39 @@ describe('openAuth', () => {
 
     await auth.cancel(session.id);
     expect(existsSync(templatePath)).toBe(false);
+  });
+
+  it('passes options only in the child environment and binds the token to those settings', async () => {
+    const { child, stdout } = fakeChild();
+    const spawnMock = vi.fn<SpawnCall>(() => child);
+    const auth = openAuth(() => undefined, spawnMock);
+    const clientSecret = crypto.randomUUID();
+    const values = { client_id: 'desktop-client', client_secret: clientSecret, scope: 'drive.readonly', chunk_size: '' };
+    const config = { ...drive, values, remote: 'photos', daemonIdentity: 'daemon' };
+    vi.stubEnv('RCLONE_DRIVE_CLIENT_ID', 'inherited-client');
+    vi.stubEnv('RCLONE_CONFIG_TMP_TOKEN', 'inherited-token');
+    try {
+      const session = auth.start('/bin/rclone', config);
+      const [, args, options] = spawnMock.mock.calls[0]!;
+      expect(args.join(' ')).not.toContain(clientSecret);
+      expect(options.env).toMatchObject({
+        RCLONE_DRIVE_CLIENT_ID: values.client_id, RCLONE_DRIVE_CLIENT_SECRET: clientSecret, RCLONE_DRIVE_SCOPE: values.scope,
+      });
+      expect(options.env).not.toHaveProperty('RCLONE_CONFIG_TMP_TOKEN');
+      expect(options.env).not.toHaveProperty('RCLONE_DRIVE_CHUNK_SIZE');
+      expect(process.env.RCLONE_DRIVE_CLIENT_ID).toBe('inherited-client');
+      const token = JSON.stringify({ access_token: crypto.randomUUID() });
+      stdout.write('Paste the following into your remote machine --->\n');
+      stdout.write(token + '\n');
+      child.emit('close', 0);
+      expect(auth.token(session.id, config)).toBe(token);
+      for (const changed of [{ ...config, remote: 'other' }, { ...config, client: {} },
+        { ...config, daemonIdentity: 'restarted' }, { ...config, values: { ...values, scope: 'drive' } }]) {
+        expect(() => auth.token(session.id, changed)).toThrow('Authorization settings changed');
+      }
+    } finally {
+      await auth.stop();
+      vi.unstubAllEnvs();
+    }
   });
 });

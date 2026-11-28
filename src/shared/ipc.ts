@@ -1,7 +1,7 @@
 import type { BuildInfo } from './buildInfo';
 import type { AppSettings } from './settings';
 import type { HourCycle } from './timeFormat';
-import type { ActiveMount, AuthSession, CompletedTransfer, CryptDraft, DaemonStatus, MountProfile, RemoteConfigResult, RemoteDraft, RemoteEditorData, SyncJob, SyncJobRun, LogLine, PrereqStatus, RemoteEntry, RemoteQuota, RemoteSummary, TransferStats } from './types';
+import type { ActiveMount, AuthSession, CompletedTransfer, CryptDraft, DaemonStatus, MountProfile, RemoteAuthDraft, RemoteConfigResult, RemoteDraft, RemoteEditorData, SyncJob, SyncJobRun, LogLine, PrereqStatus, RemoteEntry, RemoteQuota, RemoteSummary, TransferStats } from './types';
 
 export const NOTICE_OVERLAY_ARG = '--ludyrudy-notice-overlay';
 
@@ -50,7 +50,7 @@ export interface DesktopApi {
   generateSecret(bits?: number): Promise<string>;
   setConfigPassword(password: string | null): Promise<void>;
   hasConfigPassword(): Promise<boolean>;
-  startAuth(provider: string): Promise<AuthSession>;
+  startAuth(draft: RemoteAuthDraft): Promise<AuthSession>;
   authStatus(sessionId: string): Promise<AuthSession | null>;
   openAuth(sessionId: string): Promise<void>;
   cancelAuth(sessionId: string): Promise<void>;

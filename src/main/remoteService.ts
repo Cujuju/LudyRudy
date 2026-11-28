@@ -1,6 +1,6 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
-import type { CryptDraft, PendingRemoteConfig, ProviderInfo, ProviderOptionSpec, RemoteConfigResult, RemoteDraft, RemoteEditorData, RemoteParameters, RemoteSummary } from '@shared/types';
-import type { RcloneAuth } from './rcloneAuth';
+import type { CryptDraft, PendingRemoteConfig, ProviderInfo, ProviderOptionSpec, RemoteAuthDraft, RemoteConfigResult, RemoteDraft, RemoteEditorData, RemoteParameters, RemoteSummary } from '@shared/types';
+import type { AuthorizationConfig, RcloneAuth } from './rcloneAuth';
 import { describeFs, RcloneClient, remoteFs, validRemoteName } from './rcloneClient';
 import type { RcloneSupervisor } from './rcloneSupervisor';
 import { createSerialQueue } from './serialQueue';
@@ -184,11 +184,37 @@ export function openRemotes({ client, isCurrentClient }: Pick<RcloneSupervisor, 
     return providers.flatMap(providerInfo).sort((a, b) => rank(a.name) - rank(b.name) || a.name.localeCompare(b.name));
   }
 
-  function configFor(draft: RemoteDraft, provider: string): RemoteParameters {
+  async function authorization(rc: RcloneClient, draft: RemoteAuthDraft, identity: string | undefined, knownProvider?: ProviderInfo): Promise<AuthorizationConfig> {
+    if (!identity) throw new Error('Could not identify the rclone daemon and config. Reconnect before authorizing.');
+    const changes = parameters(draft.parameters);
+    const remote = draft.name;
+    if (remote !== undefined) requireRemoteName(remote);
+    const [provider, saved] = await Promise.all([
+      knownProvider ?? listProviders(rc).then((items) => items.find(({ name }) => name === draft.type)),
+      remote === undefined ? undefined : rc.call('config/get', { name: remote }),
+    ]);
+    if (!provider?.isOAuth) throw new Error('Unknown OAuth provider.');
+    if (!isCurrentClient(rc) || (remote !== undefined && saved?.type !== provider.name)) {
+      throw new Error('The remote changed. Reopen the editor before authorizing.');
+    }
+    const source = { ...saved, ...changes };
+    const values = Object.fromEntries(provider.options.flatMap(({ name }) => {
+      if (name === 'token' || name.startsWith('config_') || !Object.hasOwn(source, name)) return [];
+      const value = source[name];
+      if (typeof value !== 'string' && typeof value !== 'boolean' && typeof value !== 'number') return [];
+      const text = String(value);
+      if (text.includes('\0')) throw new Error('Invalid OAuth configuration value.');
+      return text === '' ? [] : [[name, text]];
+    }));
+    return { client: rc, provider: provider.name, prefix: provider.prefix, remote, daemonIdentity: identity, values };
+  }
+
+  async function configFor(rc: RcloneClient, draft: RemoteDraft, identity: string | undefined, editing: boolean, provider?: ProviderInfo): Promise<RemoteParameters> {
     const config = parameters(draft.parameters);
     if (draft.authSessionId !== undefined) {
       if (typeof draft.authSessionId !== 'string') throw new Error('Invalid authorization session.');
-      config.token = auth.token(draft.authSessionId, provider);
+      const effective = await authorization(rc, { type: draft.type, name: editing ? draft.name : undefined, parameters: config }, identity, provider);
+      config.token = auth.token(draft.authSessionId, effective);
     }
     return config;
   }
@@ -201,9 +227,9 @@ export function openRemotes({ client, isCurrentClient }: Pick<RcloneSupervisor, 
       if (remotes.some(({ name }) => name === draft.name)) throw new Error('A remote with that name already exists.');
       const provider = (await listProviders(rc)).find(({ name }) => name === draft.type);
       if (!provider) throw new Error('Unknown rclone provider.');
-      const config = configFor(draft, provider.name);
-      if (provider.isCrypt) validateCryptParameters(remotes, draft.name, config);
       const identity = await configIdentity(rc);
+      const config = await configFor(rc, draft, identity, false, provider);
+      if (provider.isCrypt) validateCryptParameters(remotes, draft.name, config);
       if (!isCurrentClient(rc)) throw new Error('The rclone connection changed.');
       continuations.delete(draft.name);
       const result = await rc.call('config/create', { name: draft.name, type: provider.name, parameters: config, opt: WRITE_OPTIONS });
@@ -213,6 +239,11 @@ export function openRemotes({ client, isCurrentClient }: Pick<RcloneSupervisor, 
 
   return {
     listProviders,
+    async authorization(draft: RemoteAuthDraft): Promise<AuthorizationConfig> {
+      if (!draft || typeof draft !== 'object' || typeof draft.type !== 'string') throw new Error('Invalid authorization request.');
+      const rc = client();
+      return authorization(rc, draft, await configIdentity(rc));
+    },
     async remoteEditor(remote?: Pick<RemoteSummary, 'name' | 'type'>): Promise<RemoteEditorData> {
       const rc = client();
       if (!remote) return { providers: await listProviders(rc), values: {} };
@@ -252,9 +283,9 @@ export function openRemotes({ client, isCurrentClient }: Pick<RcloneSupervisor, 
         const existing = remotes.find(({ name }) => name === draft.name);
         if (!existing) throw new Error('Unknown rclone remote.');
         if (draft.type !== existing.type) throw new Error('The remote provider cannot be changed.');
-        const config = configFor(draft, existing.type);
-        if (existing.isCrypt && 'remote' in config) validateCryptParameters(remotes, draft.name, config);
         const identity = await configIdentity(rc);
+        const config = await configFor(rc, draft, identity, true);
+        if (existing.isCrypt && 'remote' in config) validateCryptParameters(remotes, draft.name, config);
         if (!isCurrentClient(rc)) throw new Error('The rclone connection changed.');
         continuations.delete(draft.name);
         const result = await rc.call('config/update', { name: draft.name, parameters: config, opt: WRITE_OPTIONS });
