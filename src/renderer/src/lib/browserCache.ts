@@ -24,129 +24,93 @@ export function parentRemotePath(path: string): string {
   return slash < 0 ? '' : trimmed.slice(0, slash);
 }
 
-export function createBrowserCache(options: BrowserCacheOptions = {}) {
-  const now = options.now ?? Date.now;
-  const directoryFreshMs = options.directoryFreshMs ?? DIRECTORY_FRESH_MS;
-  const quotaFreshMs = options.quotaFreshMs ?? QUOTA_FRESH_MS;
-  const maxDirectories = options.maxDirectories ?? MAX_CACHED_DIRECTORIES;
+function createResourceCache<T>(now: () => number, freshMs: number, maxEntries = Infinity) {
+  const records = new Map<string, CacheRecord<T>>();
+  const pending = new Map<string, Promise<T>>();
 
-  const directories = new Map<string, CacheRecord<RemoteEntry[]>>();
-  const pendingDirs = new Map<string, Promise<RemoteEntry[]>>();
-  const quotas = new Map<string, CacheRecord<RemoteQuota>>();
-  const pendingQuotas = new Map<string, Promise<RemoteQuota>>();
-  const dirVersions = new Map<string, number>();
-  const quotaVersions = new Map<string, number>();
-  let globalVersion = 0;
-
-  const versionOf = (map: Map<string, number>, key: string) => `${globalVersion}:${map.get(key) ?? 0}`;
-  const bump = (map: Map<string, number>, key: string) => { map.set(key, (map.get(key) ?? 0) + 1); };
-
-  function touchDirectory(key: string, record: CacheRecord<RemoteEntry[]>): void {
-    directories.delete(key);
-    directories.set(key, record);
-    while (directories.size > maxDirectories) {
-      const oldest = directories.keys().next().value;
+  function remember(key: string, record: CacheRecord<T>): void {
+    records.delete(key);
+    records.set(key, record);
+    while (records.size > maxEntries) {
+      const oldest = records.keys().next().value;
       if (oldest === undefined) break;
-      directories.delete(oldest);
+      records.delete(oldest);
     }
   }
 
-  function peekDirectory(remote: string, path: string): { items: RemoteEntry[]; fresh: boolean } | undefined {
-    const key = dirKey(remote, path);
-    const record = directories.get(key);
+  function peek(key: string) {
+    const record = records.get(key);
     if (!record) return undefined;
-    touchDirectory(key, record);
-    return { items: record.value, fresh: now() - record.fetchedAt < directoryFreshMs };
+    remember(key, record);
+    return { value: record.value, fresh: now() - record.fetchedAt < freshMs };
   }
 
-  function loadDirectory(remote: string, path: string, fetcher: () => Promise<RemoteEntry[]>, opts?: { force?: boolean }): Promise<RemoteEntry[]> {
-    const key = dirKey(remote, path);
+  function load(key: string, fetcher: () => Promise<T>, opts?: { force?: boolean }): Promise<T> {
     if (!opts?.force) {
-      const cached = peekDirectory(remote, path);
-      if (cached?.fresh) return Promise.resolve(cached.items);
-      const inflight = pendingDirs.get(key);
-      if (inflight) return inflight;
-    }
-    const version = versionOf(dirVersions, key);
-    const request = fetcher().then((items) => {
-      if (versionOf(dirVersions, key) === version) touchDirectory(key, { value: items, fetchedAt: now() });
-      return items;
-    }).finally(() => {
-      if (pendingDirs.get(key) === request) pendingDirs.delete(key);
-    });
-    pendingDirs.set(key, request);
-    return request;
-  }
-
-  function invalidateDirectory(remote: string, path: string): void {
-    const key = dirKey(remote, path);
-    directories.delete(key);
-    pendingDirs.delete(key);
-    bump(dirVersions, key);
-  }
-
-  function invalidatePrefix(remote: string, prefix: string): void {
-    const normalized = prefix.replace(/^\/+|\/+$/g, '');
-    const exact = dirKey(remote, normalized);
-    const childPrefix = normalized ? `${exact}/` : `${remote}\0`;
-    for (const key of [...directories.keys(), ...pendingDirs.keys()]) {
-      if (key === exact || key.startsWith(childPrefix)) {
-        directories.delete(key);
-        pendingDirs.delete(key);
-        bump(dirVersions, key);
-      }
-    }
-  }
-
-  function peekQuota(remote: string): { value: RemoteQuota; fresh: boolean } | undefined {
-    const record = quotas.get(remote);
-    if (!record) return undefined;
-    return { value: record.value, fresh: now() - record.fetchedAt < quotaFreshMs };
-  }
-
-  function loadQuota(remote: string, fetcher: () => Promise<RemoteQuota>, opts?: { force?: boolean }): Promise<RemoteQuota> {
-    if (!opts?.force) {
-      const cached = peekQuota(remote);
+      const cached = peek(key);
       if (cached?.fresh) return Promise.resolve(cached.value);
-      const inflight = pendingQuotas.get(remote);
+      const inflight = pending.get(key);
       if (inflight) return inflight;
     }
-    const version = versionOf(quotaVersions, remote);
     const request = fetcher().then((value) => {
-      if (versionOf(quotaVersions, remote) === version) quotas.set(remote, { value, fetchedAt: now() });
+      if (pending.get(key) === request) remember(key, { value, fetchedAt: now() });
       return value;
     }).finally(() => {
-      if (pendingQuotas.get(remote) === request) pendingQuotas.delete(remote);
+      if (pending.get(key) === request) pending.delete(key);
     });
-    pendingQuotas.set(remote, request);
+    pending.set(key, request);
     return request;
   }
 
-  function invalidateQuota(remote: string): void {
-    quotas.delete(remote);
-    pendingQuotas.delete(remote);
-    bump(quotaVersions, remote);
-  }
-
-  function clear(): void {
-    globalVersion += 1;
-    directories.clear();
-    pendingDirs.clear();
-    quotas.clear();
-    pendingQuotas.clear();
-    dirVersions.clear();
-    quotaVersions.clear();
+  function invalidate(key: string): void {
+    records.delete(key);
+    pending.delete(key);
   }
 
   return {
-    peekDirectory,
-    loadDirectory,
-    invalidateDirectory,
-    invalidatePrefix,
-    peekQuota,
-    loadQuota,
-    invalidateQuota,
-    clear,
+    peek, load, invalidate,
+    invalidateMatching(matches: (key: string) => boolean): void {
+      for (const key of [...records.keys(), ...pending.keys()]) {
+        if (matches(key)) invalidate(key);
+      }
+    },
+    clear(): void {
+      records.clear();
+      pending.clear();
+    },
+  };
+}
+
+export function createBrowserCache(options: BrowserCacheOptions = {}) {
+  const now = options.now ?? Date.now;
+  const directories = createResourceCache<RemoteEntry[]>(now, options.directoryFreshMs ?? DIRECTORY_FRESH_MS,
+    options.maxDirectories ?? MAX_CACHED_DIRECTORIES);
+  const quotas = createResourceCache<RemoteQuota>(now, options.quotaFreshMs ?? QUOTA_FRESH_MS);
+
+  return {
+    peekDirectory(remote: string, path: string) {
+      const record = directories.peek(dirKey(remote, path));
+      return record && { items: record.value, fresh: record.fresh };
+    },
+    loadDirectory(remote: string, path: string, fetcher: () => Promise<RemoteEntry[]>, opts?: { force?: boolean }) {
+      return directories.load(dirKey(remote, path), fetcher, opts);
+    },
+    invalidateDirectory(remote: string, path: string): void {
+      directories.invalidate(dirKey(remote, path));
+    },
+    invalidatePrefix(remote: string, prefix: string): void {
+      const normalized = prefix.replace(/^\/+|\/+$/g, '');
+      const exact = dirKey(remote, normalized);
+      const childPrefix = normalized ? `${exact}/` : `${remote}\0`;
+      directories.invalidateMatching((key) => key === exact || key.startsWith(childPrefix));
+    },
+    peekQuota: quotas.peek,
+    loadQuota: quotas.load,
+    invalidateQuota: quotas.invalidate,
+    clear(): void {
+      directories.clear();
+      quotas.clear();
+    },
   };
 }
 

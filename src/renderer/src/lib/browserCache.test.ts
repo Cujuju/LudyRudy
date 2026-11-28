@@ -40,6 +40,65 @@ describe('browserCache', () => {
     await expect(Promise.all([first, second])).resolves.toEqual([[entry('docs/spec.md')], [entry('docs/spec.md')]]);
   });
 
+  it('keeps a forced refresh result when superseded requests complete later', async () => {
+    const cache = createBrowserCache();
+    let resolveListing!: (value: RemoteEntry[]) => void;
+    let resolveQuota!: (value: RemoteQuota) => void;
+
+    const listing = cache.loadDirectory('drive', '', () => new Promise((resolve) => { resolveListing = resolve; }));
+    const capacity = cache.loadQuota('drive', () => new Promise((resolve) => { resolveQuota = resolve; }));
+    await Promise.all([
+      cache.loadDirectory('drive', '', async () => [entry('new.txt')], { force: true }),
+      cache.loadQuota('drive', async () => quota(500), { force: true }),
+    ]);
+    resolveListing([entry('old.txt')]);
+    resolveQuota(quota(250));
+    await Promise.all([listing, capacity]);
+
+    expect(cache.peekDirectory('drive', '')?.items).toEqual([entry('new.txt')]);
+    expect(cache.peekQuota('drive')?.value).toEqual(quota(500));
+  });
+
+  it.each(['success', 'failure'])('keeps the forced request pending after the older request settles (%s)', async (outcome) => {
+    const cache = createBrowserCache();
+    let resolveOld!: (value: RemoteEntry[]) => void;
+    let resolveNew!: (value: RemoteEntry[]) => void;
+    let rejectNew!: (error: Error) => void;
+    const old = cache.loadDirectory('drive', '', () => new Promise((resolve) => { resolveOld = resolve; }));
+    const forced = cache.loadDirectory('drive', '', () => new Promise((resolve, reject) => {
+      resolveNew = resolve;
+      rejectNew = reject;
+    }), { force: true });
+    resolveOld([entry('old.txt')]);
+    await old;
+    expect(cache.peekDirectory('drive', '')).toBeUndefined();
+    expect(cache.loadDirectory('drive', '', async () => [])).toBe(forced);
+
+    if (outcome === 'failure') {
+      rejectNew(new Error('Listing failed'));
+      await expect(forced).rejects.toThrow('Listing failed');
+      expect(cache.peekDirectory('drive', '')).toBeUndefined();
+    } else {
+      resolveNew([entry('new.txt')]);
+      await forced;
+      expect(cache.peekDirectory('drive', '')?.items).toEqual([entry('new.txt')]);
+    }
+  });
+
+  it.each(['targeted', 'clear'])('does not cache pending directory or quota data after %s invalidation', async (mode) => {
+    const cache = createBrowserCache();
+    const listing = cache.loadDirectory('drive', 'docs/nested', async () => [entry('old.txt')]);
+    const capacity = cache.loadQuota('drive', async () => quota(100));
+    if (mode === 'clear') cache.clear();
+    else {
+      cache.invalidatePrefix('drive', 'docs');
+      cache.invalidateQuota('drive');
+    }
+    await Promise.all([listing, capacity]);
+    expect(cache.peekDirectory('drive', 'docs/nested')).toBeUndefined();
+    expect(cache.peekQuota('drive')).toBeUndefined();
+  });
+
   it('prevents an invalidated in-flight fetch from repopulating stale data', async () => {
     let resolveStale!: (items: RemoteEntry[]) => void;
     const cache = createBrowserCache();

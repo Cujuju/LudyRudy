@@ -214,10 +214,11 @@ export function Browser(props: PageProps) {
     return state && target && state.target.remote === target.remote && state.target.path === target.path ? state : undefined;
   };
   const listingLoading = () => current()?.loading ?? false;
+  const items = createMemo(() => current()?.items);
+  const sorted = createMemo(() => sortEntries(items() ?? [], sort()));
   const filtered = createMemo(() => {
     const query = filter().toLowerCase();
-    const items = (current()?.items ?? []).filter((entry) => entry.name.toLowerCase().includes(query));
-    return sortEntries(items, sort());
+    return query ? sorted().filter((entry) => entry.name.toLowerCase().includes(query)) : sorted();
   });
   const activeColumns = createMemo(() => BROWSER_COLUMNS.filter((col) => columns().includes(col.key)));
   const toggleSort = (key: SortKey) => setSort((prev) => nextSort(prev, key));

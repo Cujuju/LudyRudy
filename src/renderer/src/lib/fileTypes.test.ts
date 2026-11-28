@@ -87,6 +87,24 @@ describe('sortEntries', () => {
       .toEqual(['Archive', 'banner.png', 'alpha.pdf', 'zebra.txt', 'Documents']);
   });
 
+  it('uses ascending natural names to break descending ties and handles invalid dates', () => {
+    const files = [
+      entry({ name: 'file10.txt', size: 100, modTime: 'invalid', tier: 'standard' }),
+      entry({ name: 'file2.txt', size: 100, modTime: '', tier: 'STANDARD' }),
+      entry({ name: 'file1.txt', size: 100, modTime: '2026-01-01T00:00:00Z', tier: 'Archive' }),
+    ];
+    for (const key of ['name', 'size', 'type'] as const) {
+      expect(sortEntries(files, { key, direction: key === 'name' ? 'asc' : 'desc' }).map(({ name }) => name))
+        .toEqual(['file1.txt', 'file2.txt', 'file10.txt']);
+    }
+    for (const key of ['tier', 'modTime'] as const) {
+      expect(sortEntries(files.slice(0, 2), { key, direction: 'desc' }).map(({ name }) => name))
+        .toEqual(['file2.txt', 'file10.txt']);
+    }
+    expect(sortEntries(files, { key: 'modTime', direction: 'desc' }).map(({ name }) => name))
+      .toEqual(['file1.txt', 'file2.txt', 'file10.txt']);
+  });
+
   it('sorts by optional metadata columns and validates persisted column lists', () => {
     const withTier = [
       entry({ name: 'cold.bin', tier: 'GLACIER' }),
