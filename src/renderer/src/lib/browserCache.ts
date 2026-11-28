@@ -1,5 +1,7 @@
+import { createSignal, onCleanup, untrack } from 'solid-js';
 import type { RemoteEntry, RemoteQuota } from '@shared/types';
 import { remotePath } from '@shared/remotePath';
+import { errorMessage } from './actions';
 
 export const DIRECTORY_FRESH_MS = 60_000;
 export const QUOTA_FRESH_MS = 5 * 60_000;
@@ -8,6 +10,56 @@ export const MAX_CACHED_DIRECTORIES = 200;
 interface CacheRecord<T> {
   value: T;
   fetchedAt: number;
+}
+
+interface RequestState<T> {
+  key: string;
+  value: T | undefined;
+  loading: boolean;
+  error: string;
+}
+
+interface BrowserRequest<Target, Value> {
+  key: (target: Target) => string;
+  peek: (target: Target) => { value: Value; fresh: boolean } | undefined;
+  fetch: (target: Target, force: boolean) => Promise<Value>;
+}
+
+export function createBrowserRequest<Target, Value>(request: BrowserRequest<Target, Value>, active: () => boolean) {
+  const [state, setState] = createSignal<RequestState<Value>>();
+  let revision = 0;
+  let disposed = false;
+  onCleanup(() => { disposed = true; });
+
+  async function load(target: Target | false, force = false): Promise<void> {
+    if (disposed || !active()) return;
+    const currentRevision = ++revision;
+    const isCurrent = () => !disposed && currentRevision === revision && active();
+    if (target === false) {
+      setState(undefined);
+      return;
+    }
+    const key = request.key(target);
+    const previous = untrack(state);
+    let value = previous?.key === key ? previous.value : undefined;
+    try {
+      const cached = force ? undefined : request.peek(target);
+      if (cached) value = cached.value;
+      setState({ key, value, loading: !cached?.fresh, error: '' });
+      if (cached?.fresh) return;
+      value = await request.fetch(target, force);
+      if (isCurrent()) setState({ key, value, loading: false, error: '' });
+    } catch (cause) {
+      if (isCurrent()) setState({ key, value, loading: false, error: errorMessage(cause) });
+    }
+  }
+
+  function current(target: Target | false) {
+    const value = state();
+    return target !== false && value?.key === request.key(target) ? value : undefined;
+  }
+
+  return { load, current };
 }
 
 export interface BrowserCacheOptions {
