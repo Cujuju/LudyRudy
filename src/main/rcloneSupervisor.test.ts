@@ -128,6 +128,30 @@ describe('RcloneSupervisor', () => {
     expect(daemon.current().daemon.state).toBe('stopped');
   });
 
+  it('runs startup hooks once per managed process across RC reconnects', async () => {
+    const first = new FakeChild();
+    const second = new FakeChild();
+    mocks.spawn.mockReturnValueOnce(first).mockReturnValueOnce(second);
+    let child = first;
+    const fetch = fixture(() => child.close());
+    const ready = vi.fn();
+    const daemon = openDaemon({ ready });
+    await daemon.start();
+    fetch.mockRejectedValueOnce(new Error('Temporary connection failure'));
+    await daemon.refresh();
+    expect(daemon.current().daemon.state).toBe('error');
+    await daemon.refresh();
+    expect(daemon.current().daemon.state).toBe('running');
+    expect(ready).toHaveBeenCalledTimes(1);
+    expect(daemon.current().logs[0]?.message).toBe('Reconnected to managed rclone.');
+
+    await daemon.stop();
+    child = second;
+    await daemon.start();
+    expect(ready).toHaveBeenCalledTimes(2);
+    await daemon.stop();
+  });
+
   it('falls back to SIGTERM when graceful quit does not exit', async () => {
     const child = new FakeChild();
     mocks.spawn.mockReturnValue(child);

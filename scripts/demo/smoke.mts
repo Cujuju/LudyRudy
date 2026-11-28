@@ -40,6 +40,8 @@ export async function smoke(): Promise<string[]> {
     await verifyUi(page, abort);
     const verified = await page.eval<boolean>(`(async () => {
       const api = window.api;
+      const vaultFiles = await api.browse('gdrive-vault', '');
+      if (vaultFiles.find(({ name }) => name === 'journal.txt')?.encrypted !== 'encrypted-journal') return false;
       const mountPoint = '${process.platform === 'win32' ? 'Z:/' : '/demo/smoke'}';
       const options = { name: 'Smoke', remote: 'smoke-files', remotePath: '', mountPoint, autoMount: false,
         vfsCacheMaxSize: '', vfsCacheMaxAge: '', readOnly: true, extraFlags: [] };

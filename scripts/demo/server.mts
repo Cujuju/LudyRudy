@@ -25,7 +25,7 @@ const LISTINGS: Record<string, Record<string, RcItem[]>> = {
     '': [item('Documents'), item('Photos'), item('schedule.pdf', 'application/pdf', 850_000)],
     Documents: [item('Documents/field-notes.txt', 'text/plain', 12_000)],
   },
-  'gdrive-vault': { '': [item('Archive'), item('Private'), item('journal.txt', 'text/plain', 14_100)] },
+  'gdrive-vault': { '': [item('Archive'), item('Private'), { ...item('journal.txt', 'text/plain', 14_100), Encrypted: 'encrypted-journal' }] },
   'b2-backups': { '': [item('laptop-backups'), item('photo-backups')] },
   's3-media': { '': [item('media-library'), item('raw-uploads')] },
   'nas-sftp': { '': [item('home'), item('shared')] },
@@ -220,9 +220,11 @@ export async function startDemoRclone() {
     },
     '/vfs/refresh': ({ dir }) => ({ result: { [typeof dir === 'string' ? dir : '']: 'OK' } }),
     '/vfs/forget': ({ dir }) => ({ forgotten: typeof dir === 'string' ? [dir] : [] }),
-    '/operations/list': ({ fs, remote }) => {
+    '/operations/list': ({ fs, remote, opt }) => {
       const { entries, key } = fsPath(fs, remote);
-      return { list: children(entries, key).filter(({ Path }) => Path !== key && posix.dirname(Path) === (key || '.')) };
+      const showEncrypted = opt && typeof opt === 'object' && 'showEncrypted' in opt && opt.showEncrypted === true;
+      const list = children(entries, key).filter(({ Path }) => Path !== key && posix.dirname(Path) === (key || '.'));
+      return { list: showEncrypted ? list : list.map(({ Encrypted: _, ...entry }) => entry) };
     },
     '/operations/stat': ({ fs, remote }) => {
       const { entries, key } = fsPath(fs, remote);

@@ -18,7 +18,7 @@ type NoParams = Record<string, never>;
 
 type RcResult = Record<string, unknown>;
 export interface RcFile { fs: string; remote: string }
-export interface RcListRequest extends RcFile { _config?: { UseServerModTime?: boolean } }
+export interface RcListRequest extends RcFile { _config?: { UseServerModTime?: boolean }; opt?: { showEncrypted: boolean } }
 export interface RcCopyFile { srcFs: string; srcRemote: string; dstFs: string; dstRemote: string }
 export interface RcMountOptions {
   fs: string;
@@ -188,9 +188,10 @@ export class RcloneClient {
     }));
   }
 
-  async list(remote: string, path: string): Promise<RemoteEntry[]> {
+  async list(remote: string, path: string, showEncrypted = false): Promise<RemoteEntry[]> {
     const { list } = await this.call('operations/list', {
       fs: remoteFs(remote), remote: path, _config: { UseServerModTime: true },
+      ...(showEncrypted ? { opt: { showEncrypted } } : {}),
     });
     return (list ?? []).map(toRemoteEntry);
   }
