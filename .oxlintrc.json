@@ -5,8 +5,10 @@
   "plugins": ["typescript"],
   "jsPlugins": [{ "name": "budget", "specifier": "eslint-plugin-comment-budget" }],
   "options": { "typeAware": true },
-  // Mirrors .comment-budget.json "ignore".
-  "ignorePatterns": ["**/node_modules/**", "**/out/**", "**/dist/**", "**/release/**", "**/*.d.ts", "**/.*/**", "**/.*", "resources/**"],
+  "ignorePatterns": [
+    "**/node_modules/**", "**/out/**", "**/dist/**", "**/release/**", "**/*.d.ts",
+    "**/.*/**", "**/.*", "resources/**", "electron.vite.config.ts.*.mjs"
+  ],
   "overrides": [
     {
       // Comment budget: 30 words a block (.comment-budget.json).

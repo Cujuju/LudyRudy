@@ -1,0 +1,46 @@
+name: Application checks
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  macos:
+    runs-on: macos-26
+    defaults:
+      run:
+        working-directory: ludyrudy
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: ludyrudy
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: Cujuju/solidjs-toolkit
+          ref: bd189fd4589fd1c95c96515019bd3402da4ee05a
+          path: solidjs-toolkit
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Install pnpm
+        run: npm install --global pnpm@10.34.5
+      - name: Record checked revisions and runtimes
+        run: |
+          git log -1 --format='ludyrudy %H'
+          git -C ../solidjs-toolkit log -1 --format='solidjs-toolkit %H'
+          node --version
+          pnpm --version
+      - name: Install from both lockfiles
+        run: |
+          pnpm --dir ../solidjs-toolkit install --frozen-lockfile
+          pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: env -u ELECTRON_RUN_AS_NODE pnpm smoke
