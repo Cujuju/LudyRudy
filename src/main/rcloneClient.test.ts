@@ -3,6 +3,10 @@ import { RcloneClient } from './rcloneClient';
 
 afterEach(() => vi.unstubAllGlobals());
 
+const IDLE_STATS = {
+  bytes: 0, totalBytes: 0, speed: 0, eta: null, transfers: 0, totalTransfers: 0, checks: 0, errors: 0,
+};
+
 describe('RcloneClient', () => {
   it('posts JSON with Basic auth and preserves the endpoint prefix', async () => {
     const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(Response.json({ ok: true }));
@@ -51,7 +55,13 @@ describe('RcloneClient', () => {
 
   it('uses distinct timeouts for local RPCs, remote cloud operations, mounts, and file mutations', async () => {
     const timeoutSpy = vi.spyOn(AbortSignal, 'timeout');
-    vi.stubGlobal('fetch', vi.fn<typeof globalThis.fetch>().mockImplementation(async () => Response.json({})));
+    vi.stubGlobal('fetch', vi.fn<typeof globalThis.fetch>()
+      .mockResolvedValueOnce(Response.json({ version: 'v1.76.0' }))
+      .mockResolvedValueOnce(Response.json({ item: null }))
+      .mockResolvedValueOnce(Response.json({ list: [] }))
+      .mockResolvedValueOnce(Response.json({}))
+      .mockResolvedValueOnce(Response.json({ mountPoint: '/mnt/gdrive' }))
+      .mockResolvedValueOnce(Response.json({})));
     const client = new RcloneClient('http://localhost:5572');
     try {
       await client.call('core/version');
@@ -82,7 +92,16 @@ describe('remote config projection', () => {
 
 describe('expanded RC transport', () => {
   it('posts optional options, filters, and job identifiers using the RC wire format', async () => {
-    const fetch = vi.fn<typeof globalThis.fetch>().mockImplementation(async () => Response.json({}));
+    const fetch = vi.fn<typeof globalThis.fetch>()
+      .mockImplementation(async () => Response.json({}))
+      .mockResolvedValueOnce(Response.json({}))
+      .mockResolvedValueOnce(Response.json({ mountPoint: '/mnt/vault' }))
+      .mockResolvedValueOnce(Response.json({}))
+      .mockResolvedValueOnce(Response.json({ jobid: 12 }))
+      .mockResolvedValueOnce(Response.json({}))
+      .mockResolvedValueOnce(Response.json({}))
+      .mockResolvedValueOnce(Response.json({ list: [] }))
+      .mockResolvedValueOnce(Response.json({ list: [] }));
     vi.stubGlobal('fetch', fetch);
     const client = new RcloneClient('http://localhost:5572');
     await client.call('config/update', { name: 'vault', parameters: { directory_name_encryption: true }, opt: { obscure: true } });
@@ -109,7 +128,7 @@ describe('expanded RC transport', () => {
 
   it('preserves independent upload and download limits from rclone', async () => {
     vi.stubGlobal('fetch', vi.fn<typeof globalThis.fetch>()
-      .mockResolvedValueOnce(Response.json({ bytes: 0 }))
+      .mockResolvedValueOnce(Response.json(IDLE_STATS))
       .mockResolvedValueOnce(Response.json({ rate: '5Mi:off', bytesPerSecondTx: 5 * 1024 ** 2, bytesPerSecondRx: -1 })));
     const client = new RcloneClient('http://localhost:5572');
     await expect(client.stats()).resolves.toMatchObject({ bwLimit: '5Mi:off', bwLimitTx: 5 * 1024 ** 2, bwLimitRx: -1 });
@@ -118,7 +137,10 @@ describe('expanded RC transport', () => {
   it('omits transfer engine errors and inline FS parameters from projections', async () => {
     const secret = crypto.randomUUID();
     vi.stubGlobal('fetch', vi.fn<typeof globalThis.fetch>()
-      .mockResolvedValueOnce(Response.json({ transferred: [{ name: 'file.txt', size: 10, bytes: 0, checked: false, error: secret, srcFs: `:s3,token=${secret}:.` }] }))
+      .mockResolvedValueOnce(Response.json({ transferred: [{
+        name: 'file.txt', size: 10, bytes: 0, checked: false, error: secret, srcFs: `:s3,token=${secret}:.`,
+        started_at: '2026-11-20T18:45:00Z', completed_at: '2026-11-20T18:45:00Z',
+      }] }))
       .mockResolvedValueOnce(Response.json({ mountPoints: [{ Fs: `:s3,token=${secret}:.`, MountPoint: '/mnt/s3' }] }))
       .mockResolvedValueOnce(Response.json({
         bytes: 10, totalBytes: 10, speed: 5, eta: 1, transfers: 0, totalTransfers: 1, checks: 0, errors: 0,
@@ -131,5 +153,53 @@ describe('expanded RC transport', () => {
       transferring: [{ name: 'clip.bin', srcFs: ':s3', dstFs: 'vault:media' }],
     }]);
     expect(JSON.stringify(data)).not.toContain(secret);
+  });
+});
+
+describe('RC response schemas', () => {
+  const client = new RcloneClient('http://localhost:5572');
+  const mount = () => client.call('mount/mount', { fs: 'drive:', mountPoint: '/mnt/drive' });
+
+  it.each([
+    ['core/transferred', { transferred: {} }, () => client.transferred()],
+    ['core/stats', { bytes: 0 }, () => client.call('core/stats')],
+    ['core/stats', { ...IDLE_STATS, transferring: [{ name: 'file', size: 23, bytes: null }] }, () => client.call('core/stats')],
+    ['config/dump', { drive: { type: ['drive'] } }, () => client.call('config/dump')],
+    ['config/providers', { providers: [{ Name: 'drive', Prefix: 'drive', Description: 'Drive', Options: {} }] },
+      () => client.call('config/providers')],
+    ['mount/listmounts', { mountPoints: [{ MountPoint: '/mnt/drive' }] }, () => client.mounts()],
+    ['mount/mount', { mountPoint: null }, mount],
+    ['mount/mount', { mountPoint: '' }, mount],
+    ['operations/list', { list: [{ Path: 'file', Name: 'file', Size: 23 }] }, () => client.list('drive', '')],
+    ['operations/stat', {}, () => client.requireMissingDestination('drive', 'file')],
+    ['operations/stat', { item: false }, () => client.stat('drive', 'file')],
+    ['operations/about', { total: '100' }, () => client.quota('drive')],
+    ['job/list', { jobids: ['12'] }, () => client.call('job/list')],
+    ['job/status', { finished: true, success: 'true' }, () => client.call('job/status', { jobid: 12 })],
+  ])('rejects malformed %s data without exposing raw content', async (method, body, request) => {
+    const privateValue = crypto.randomUUID();
+    vi.stubGlobal('fetch', vi.fn<typeof globalThis.fetch>().mockResolvedValue(Response.json({ ...body, privateValue })));
+    await expect(request()).rejects.toMatchObject({ message: `rclone ${method} returned an invalid response.` });
+  });
+
+  it('accepts explicit null results and unreported quota fields', async () => {
+    vi.stubGlobal('fetch', vi.fn<typeof globalThis.fetch>()
+      .mockResolvedValueOnce(Response.json({ item: null }))
+      .mockResolvedValueOnce(Response.json({ list: null }))
+      .mockResolvedValueOnce(Response.json({ transferred: null }))
+      .mockResolvedValueOnce(Response.json({ used: 42, free: null })));
+    await expect(client.requireMissingDestination('drive', 'file')).resolves.toBeUndefined();
+    await expect(client.list('drive', '')).resolves.toEqual([]);
+    await expect(client.transferred()).resolves.toEqual([]);
+    await expect(client.quota('drive')).resolves.toEqual({ total: null, used: 42, free: null, trashed: null, other: null });
+  });
+
+  it('accepts transfers whose byte progress is not available yet', async () => {
+    vi.stubGlobal('fetch', vi.fn<typeof globalThis.fetch>()
+      .mockResolvedValueOnce(Response.json({ ...IDLE_STATS, transferring: [{ name: 'file', size: 23 }] }))
+      .mockResolvedValueOnce(Response.json({ rate: 'off' })));
+    await expect(client.stats()).resolves.toMatchObject({
+      transferring: [{ name: 'file', size: 23, bytes: 0, speed: 0, eta: null }],
+    });
   });
 });

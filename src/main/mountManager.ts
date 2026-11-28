@@ -89,7 +89,7 @@ export function openMountManager(context: MountContext) {
       if (rc !== context.client()) throw new Error('The rclone daemon changed during mount setup.');
       const { mountPoint } = await rc.call('mount/mount', options);
       context.notify('mountReady', 'Mount ready', profile.name);
-      return mountPoint;
+      return mountPoint ?? options.mountPoint;
     } catch (error) {
       context.notify('mountFailed', 'Mount failed', profile.name);
       throw error;

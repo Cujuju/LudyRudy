@@ -72,7 +72,6 @@ export function openJobManager(context: JobContext) {
     try {
       const status = await entry.client.call('job/status', { jobid: entry.run.rcloneJobId });
       if (!checkCurrentClient(entry)) return;
-      if (typeof status.finished !== 'boolean' || typeof status.success !== 'boolean') throw new Error('Invalid job status.');
       if (entry.executeId && status.executeId !== entry.executeId) {
         complete(entry, 'failed', 'The rclone daemon restarted.');
       } else if (status.finished) {
@@ -91,8 +90,7 @@ export function openJobManager(context: JobContext) {
           complete(entry, 'failed', 'The rclone daemon restarted.');
           return;
         }
-        if (Array.isArray(status.jobids) && status.jobids.every(Number.isSafeInteger) &&
-          !status.jobids.includes(entry.run.rcloneJobId)) {
+        if (!status.jobids.includes(entry.run.rcloneJobId)) {
           complete(entry, 'unknown', 'rclone no longer has this job’s result.');
           return;
         }
@@ -140,7 +138,6 @@ export function openJobManager(context: JobContext) {
         const { jobid, executeId } = await rc.call(job.mode === 'sync' ? 'sync/sync' : 'sync/copy', {
           srcFs, dstFs, _async: true, _config: { DryRun: dryRun }, _filter: { ExcludeRule: job.excludes },
         });
-        if (!Number.isSafeInteger(jobid)) throw new Error('rclone did not return a job ID.');
         const run: SyncJobRun = { jobId: id, rcloneJobId: jobid, dryRun, state: 'running', startedAt: new Date().toISOString(), finishedAt: null, error: null };
         active.add({ job, run, client: rc, executeId, stopRequested: false });
         context.change();

@@ -338,6 +338,7 @@ async function verifyUi(page: Cdp, abort: () => string | null, daemon: {
   await openPage(page, 'Transfers', abort);
   daemon.replaceTransferHistory('replacement-history.zip');
   await page.eval('window.api.stopDaemon().then(() => window.api.startDaemon())');
+  await contains('rclone core/transferred returned an invalid response.');
   await contains('Retry');
   if (await page.eval("document.querySelector('main')?.textContent?.includes('Documents/reports.zip')")) {
     throw new Error('Transfer history from the previous connection is still visible.');

@@ -2,25 +2,11 @@ import { createHash, createHmac, randomBytes } from 'node:crypto';
 import { isIP } from 'node:net';
 import type { ActiveMount, CompletedTransfer, RemoteParameters, RemoteEntry, RemoteQuota, RemoteSummary, TransferStats, MountProfile } from '@shared/types';
 import { isWindowsDrivePath } from './daemonPaths';
+import { decodeRcResponse, type RcItem, type RcResponse } from './rcloneResponses';
 
-export interface RcItem {
-  Path: string;
-  Name: string;
-  Size: number;
-  MimeType?: string;
-  ModTime?: string;
-  IsDir: boolean;
-  ID?: string;
-  Tier?: string;
-  Encrypted?: string;
-}
-interface RcMount { Fs: string; MountPoint: string; MountedOn?: string }
+export type { RcItem } from './rcloneResponses';
 export interface ObservedMount { source: string; view: ActiveMount }
-interface RcStats extends Omit<TransferStats, 'bwLimit' | 'bwLimitTx' | 'bwLimitRx' | 'transferring'> { transferring?: TransferStats['transferring'] }
-type ConfigDump = Record<string, Record<string, string>>;
 type NoParams = Record<string, never>;
-
-type RcResult = Record<string, unknown>;
 export interface RcFile { fs: string; remote: string }
 export interface RcListRequest extends RcFile { _config?: { UseServerModTime?: boolean }; opt?: { showEncrypted: boolean } }
 // Force a transfer comparison so equal existing files also count as conflicts.
@@ -41,60 +27,58 @@ interface RcConfig {
   opt: { obscure: boolean; nonInteractive?: boolean; continue?: boolean; state?: string; result?: string };
 }
 interface RcSync { srcFs: string; dstFs: string; _async: true; _config: { DryRun: boolean }; _filter: { ExcludeRule: string[] } }
-interface RcJobStatus { executeId?: string; finished: boolean; success: boolean; error?: string }
-interface RcTransfer { name: string; size: number; bytes: number; checked: boolean; started_at: string; completed_at: string; error?: string }
 type VfsTarget = { fs?: string };
 type VfsPaths = VfsTarget & Record<string, string | boolean | undefined>;
 
-interface RcMethods {
-  'rc/noop': [RcResult, RcResult];
-  'core/version': [NoParams, { version: string; os?: string }];
-  'core/pid': [NoParams, { pid: number }];
-  'core/quit': [NoParams, RcResult];
-  'core/stats': [NoParams, RcStats];
-  'core/stats-reset': [NoParams, RcResult];
-  'core/transferred': [NoParams, { transferred: RcTransfer[] | null }];
-  'core/bwlimit': [{ rate?: string }, { rate: string; bytesPerSecondTx?: number; bytesPerSecondRx?: number }];
-  'config/listremotes': [NoParams, { remotes: string[] | null }];
-  'config/dump': [NoParams, ConfigDump];
-  'config/get': [{ name: string }, Record<string, unknown>];
-  'config/paths': [NoParams, { config: string; cache?: string }];
-  'config/providers': [NoParams, { providers: Record<string, unknown>[] }];
-  'config/create': [RcConfig & { type: string }, RcResult];
-  'config/update': [RcConfig, RcResult];
-  'config/delete': [{ name: string }, RcResult];
-  'mount/listmounts': [NoParams, { mountPoints: RcMount[] | null }];
-  'mount/types': [NoParams, { mountTypes: string[] | null }];
-  'mount/mount': [RcMountOptions, { mountPoint: string }];
-  'mount/unmount': [{ mountPoint: string }, RcResult];
-  'mount/unmountall': [NoParams, RcResult];
-  'vfs/list': [NoParams, { vfses: string[] | null }];
-  'vfs/stats': [VfsTarget, RcResult];
-  'vfs/refresh': [VfsPaths, RcResult];
-  'vfs/forget': [VfsPaths, RcResult];
-  'operations/list': [RcListRequest, { list: RcItem[] | null }];
-  'operations/about': [{ fs: string }, Partial<RemoteQuota>];
-  'operations/stat': [RcFile, { item: RcItem | null }];
-  'operations/mkdir': [RcFile, RcResult];
-  'operations/deletefile': [RcFile, RcResult];
-  'operations/purge': [RcFile, RcResult];
-  'operations/copyfile': [RcCopyFile, RcResult];
-  'operations/movefile': [RcCopyFile, RcResult];
-  'sync/move': [{ srcFs: string; dstFs: string; createEmptySrcDirs: boolean; deleteEmptySrcDirs: boolean; _config?: typeof NO_CLOBBER }, RcResult];
-  'sync/copy': [RcSync, { jobid: number; executeId?: string }];
-  'sync/sync': [RcSync, { jobid: number; executeId?: string }];
-  'job/list': [NoParams, { jobids: number[]; executeId?: string }];
-  'job/status': [{ jobid: number }, RcJobStatus];
-  'job/stop': [{ jobid: number }, RcResult];
+interface RcRequests {
+  'rc/noop': Record<string, unknown>;
+  'core/version': NoParams;
+  'core/pid': NoParams;
+  'core/quit': NoParams;
+  'core/stats': NoParams;
+  'core/stats-reset': NoParams;
+  'core/transferred': NoParams;
+  'core/bwlimit': { rate?: string };
+  'config/listremotes': NoParams;
+  'config/dump': NoParams;
+  'config/get': { name: string };
+  'config/paths': NoParams;
+  'config/providers': NoParams;
+  'config/create': RcConfig & { type: string };
+  'config/update': RcConfig;
+  'config/delete': { name: string };
+  'mount/listmounts': NoParams;
+  'mount/types': NoParams;
+  'mount/mount': RcMountOptions;
+  'mount/unmount': { mountPoint: string };
+  'mount/unmountall': NoParams;
+  'vfs/list': NoParams;
+  'vfs/stats': VfsTarget;
+  'vfs/refresh': VfsPaths;
+  'vfs/forget': VfsPaths;
+  'operations/list': RcListRequest;
+  'operations/about': { fs: string };
+  'operations/stat': RcFile;
+  'operations/mkdir': RcFile;
+  'operations/deletefile': RcFile;
+  'operations/purge': RcFile;
+  'operations/copyfile': RcCopyFile;
+  'operations/movefile': RcCopyFile;
+  'sync/move': { srcFs: string; dstFs: string; createEmptySrcDirs: boolean; deleteEmptySrcDirs: boolean; _config?: typeof NO_CLOBBER };
+  'sync/copy': RcSync;
+  'sync/sync': RcSync;
+  'job/list': NoParams;
+  'job/status': { jobid: number };
+  'job/stop': { jobid: number };
 }
 
 const REQUEST_TIMEOUT_MS = 5_000;
 const REMOTE_OPERATION_TIMEOUT_MS = 30_000;
-const REMOTE_OPERATIONS = new Set<keyof RcMethods>([
+const REMOTE_OPERATIONS = new Set<keyof RcRequests>([
   'operations/stat', 'operations/list', 'operations/about', 'operations/mkdir', 'operations/deletefile', 'vfs/refresh',
 ]);
 const FILE_MUTATION_TIMEOUT_MS = 30 * 60_000;
-const FILE_MUTATIONS = new Set<keyof RcMethods>(['sync/move', 'operations/copyfile', 'operations/movefile', 'operations/purge']);
+const FILE_MUTATIONS = new Set<keyof RcRequests>(['sync/move', 'operations/copyfile', 'operations/movefile', 'operations/purge']);
 const MOUNT_TIMEOUT_MS = 60_000;
 const SAFE_CONFIG_KEYS = ['type', 'provider', 'region', 'filename_encryption', 'directory_name_encryption'];
 const REMOTE_NAME = '[\\p{L}\\p{N}_.+@]+(?:[ -]+[\\p{L}\\p{N}_.+@-]+)*';
@@ -143,7 +127,7 @@ export class RcloneClient {
     if (auth) this.headers.set('Authorization', `Basic ${Buffer.from(auth).toString('base64')}`);
   }
 
-  async call<K extends keyof RcMethods>(method: K, ...args: {} extends RcMethods[K][0] ? [RcMethods[K][0]?] : [RcMethods[K][0]]): Promise<RcMethods[K][1]> {
+  async call<K extends keyof RcRequests>(method: K, ...args: {} extends RcRequests[K] ? [RcRequests[K]?] : [RcRequests[K]]): Promise<RcResponse<K>> {
     const timeout = FILE_MUTATIONS.has(method)
       ? FILE_MUTATION_TIMEOUT_MS
       : method === 'mount/mount'
@@ -167,11 +151,7 @@ export class RcloneClient {
       } else await response.body?.cancel();
       throw new RcloneHttpError(method, response.status);
     }
-    const data: unknown = await response.json().catch(() => null);
-    if (data === null || typeof data !== 'object' || Array.isArray(data)) {
-      throw new Error(`rclone ${method} returned invalid JSON data.`);
-    }
-    return data as RcMethods[K][1];
+    return decodeRcResponse(method, await response.json().catch(() => null));
   }
 
   async listRemotes(windows = false): Promise<RemoteSummary[]> {
@@ -208,10 +188,10 @@ export class RcloneClient {
   async stats(windows = false): Promise<TransferStats> {
     const [stats, limit] = await Promise.all([this.call('core/stats'), this.call('core/bwlimit')]);
     const { bytes, totalBytes, speed, eta, transfers, totalTransfers, checks, errors } = stats;
-    const fsDisplay = (value: unknown) => typeof value === 'string' && value ? describeFs(value, windows).display : null;
+    const fsDisplay = (value: string | null | undefined) => value ? describeFs(value, windows).display : null;
     return { bytes, totalBytes, speed, eta, transfers, totalTransfers, checks, errors,
       transferring: (stats.transferring ?? []).map(({ name, bytes, size, speed, eta, srcFs, dstFs }) => ({
-        name, bytes, size, speed, eta, srcFs: fsDisplay(srcFs), dstFs: fsDisplay(dstFs),
+        name, size, bytes: bytes ?? 0, speed: speed ?? 0, eta: eta ?? null, srcFs: fsDisplay(srcFs), dstFs: fsDisplay(dstFs),
       })),
       bwLimit: limit.rate, bwLimitTx: limit.bytesPerSecondTx, bwLimitRx: limit.bytesPerSecondRx };
   }
@@ -233,11 +213,7 @@ export class RcloneClient {
 
   async mountTypes(): Promise<string[]> {
     const { mountTypes } = await this.call('mount/types');
-    if (mountTypes === null) return [];
-    if (!Array.isArray(mountTypes) || !mountTypes.every((type) => typeof type === 'string')) {
-      throw new Error('rclone returned an invalid list of mount types.');
-    }
-    return mountTypes;
+    return mountTypes ?? [];
   }
 
   async list(remote: string, path: string, showEncrypted = false): Promise<RemoteEntry[]> {
