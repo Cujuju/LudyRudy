@@ -1,7 +1,7 @@
 import type { BuildInfo } from './buildInfo';
 import type { AppSettings } from './settings';
 import type { HourCycle } from './timeFormat';
-import type { ActiveMount, AuthSession, CompletedTransfer, CryptDraft, DaemonStatus, MountProfile, RemoteDraft, RemoteEditorData, SyncJob, SyncJobRun, LogLine, PrereqStatus, RemoteEntry, RemoteQuota, RemoteSummary, TransferStats } from './types';
+import type { ActiveMount, AuthSession, CompletedTransfer, CryptDraft, DaemonStatus, MountProfile, RemoteConfigResult, RemoteDraft, RemoteEditorData, SyncJob, SyncJobRun, LogLine, PrereqStatus, RemoteEntry, RemoteQuota, RemoteSummary, TransferStats } from './types';
 
 export const NOTICE_OVERLAY_ARG = '--ludyrudy-notice-overlay';
 
@@ -41,11 +41,12 @@ export interface DesktopApi {
   completedTransfers(): Promise<CompletedTransfer[]>;
   resetStats(): Promise<void>;
   remoteEditor(remote?: Pick<RemoteSummary, 'name' | 'type'>): Promise<RemoteEditorData>;
-  createRemote(draft: RemoteDraft): Promise<void>;
-  updateRemote(draft: RemoteDraft): Promise<void>;
+  createRemote(draft: RemoteDraft): Promise<RemoteConfigResult>;
+  updateRemote(draft: RemoteDraft): Promise<RemoteConfigResult>;
+  continueRemoteConfig(id: string, answer: boolean): Promise<RemoteConfigResult>;
   deleteRemote(name: string): Promise<void>;
   testRemote(name: string): Promise<void>;
-  createCryptRemote(draft: CryptDraft): Promise<void>;
+  createCryptRemote(draft: CryptDraft): Promise<RemoteConfigResult>;
   generateSecret(bits?: number): Promise<string>;
   setConfigPassword(password: string | null): Promise<void>;
   hasConfigPassword(): Promise<boolean>;
@@ -107,6 +108,7 @@ export const INVOKE = {
   updateDaemon: 'settings:daemon', startDaemon: 'daemon:start', stopDaemon: 'daemon:stop', restartDaemon: 'daemon:restart',
   bandwidthLimit: 'daemon:bandwidth', completedTransfers: 'daemon:transferred', resetStats: 'daemon:reset-stats',
   remoteEditor: 'remote:editor', createRemote: 'remote:create', updateRemote: 'remote:update',
+  continueRemoteConfig: 'remote:continue-config',
   deleteRemote: 'remote:delete', testRemote: 'remote:test', createCryptRemote: 'remote:crypt', generateSecret: 'remote:generate-secret',
   setConfigPassword: 'config:set-password', hasConfigPassword: 'config:has-password',
   startAuth: 'auth:start', authStatus: 'auth:status', openAuth: 'auth:open', cancelAuth: 'auth:cancel',

@@ -53,7 +53,7 @@ else {
       },
     });
     const auth = openAuth((session) => send(EVENTS.onAuth, session));
-    const remotes = openRemotes(daemon.client, auth);
+    const remotes = openRemotes(daemon, auth);
     const mounts = openMountManager({
       client: daemon.client, profiles: () => getSettings().mounts, save: (mounts) => { updateSettings({ mounts }); },
       defaults: () => getSettings().daemon.defaultVfsCacheMode, managed: () => daemon.current().daemon.mode === 'managed',

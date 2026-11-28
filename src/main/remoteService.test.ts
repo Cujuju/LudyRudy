@@ -4,12 +4,21 @@ import { generateSecret, openRemotes, requireRemoteName } from './remoteService'
 import { RcloneClient } from './rcloneClient';
 
 const secret = () => crypto.randomUUID();
-const fixture = (dump: Record<string, Record<string, string>>) => {
-  const fetch = vi.fn<typeof globalThis.fetch>().mockImplementation(async (input) => {
+const fixture = (dump: Record<string, Record<string, string>>, responses: Record<string, unknown>[] = []) => {
+  const daemon = { executeId: 'rclone-instance', configPath: '/fixture/rclone.conf', connected: true };
+  const fetch = vi.fn<typeof globalThis.fetch>().mockImplementation(async (input, options) => {
     switch (new URL(String(input)).pathname) {
+      case '/job/list': return Response.json({ jobids: [], executeId: daemon.executeId });
+      case '/config/paths': return Response.json({ config: daemon.configPath });
       case '/config/listremotes': return Response.json({ remotes: Object.keys(dump) });
       case '/config/dump': return Response.json(dump);
-      case '/config/get': return Response.json(dump.nas ?? {});
+      case '/config/get': return Response.json(dump[JSON.parse(String(options?.body)).name] ?? {});
+      case '/config/create': {
+        const { name, type } = JSON.parse(String(options?.body));
+        dump[name] = { type };
+        return Response.json(responses.shift() ?? {});
+      }
+      case '/config/update': return Response.json(responses.shift() ?? {});
       case '/config/providers': return Response.json({ providers: [
         { Name: 'z-other', Prefix: 'other', Description: 'Other', Options: [] },
         { Name: 'crypt', Prefix: 'crypt', Description: 'Crypt', Options: [{ Name: 'password', IsPassword: true, Default: secret() }] },
@@ -33,7 +42,7 @@ const fixture = (dump: Record<string, Record<string, string>>) => {
   });
   vi.stubGlobal('fetch', fetch);
   const client = new RcloneClient('http://localhost:5572');
-  return { fetch, service: openRemotes(() => client, { token: vi.fn() }) };
+  return { fetch, daemon, service: openRemotes({ client: () => client, isCurrentClient: () => daemon.connected }, { token: vi.fn() }) };
 };
 
 const crypt = (targetRemote: string): CryptDraft => ({
@@ -82,6 +91,92 @@ describe('remote names and catalog', () => {
       expect(option?.defaultValue).toBeUndefined();
     }
     await expect(service.remoteEditor({ name: 'nas', type: 'drive' })).rejects.toThrow('The remote changed');
+  });
+});
+
+describe('configuration continuation', () => {
+  const drive = { name: 'drive', type: 'drive', parameters: {} };
+  const sharedClient = { State: 'client_id_warning', Option: { Name: 'config_shared_client_id', Type: 'bool' } };
+
+  it('reopens a pending create and continues using its main-process state', async () => {
+    const opaqueState = secret();
+    const dump: Record<string, Record<string, string>> = {};
+    const { fetch, service } = fixture(dump, [
+      { ...sharedClient, State: opaqueState },
+      { State: '*oauth-confirm,teamdrive,oauth,', Option: { Name: 'config_refresh_token', Type: 'bool' } },
+      { State: 'teamdrive_ok', Option: { Name: 'config_change_team_drive', Type: 'bool' } },
+      { State: '', Option: null, Error: '', Result: '' },
+    ]);
+    const reply = await service.createRemote(drive);
+    if (reply.state !== 'pending') throw new Error('Missing shared client prompt.');
+    expect(reply).toEqual({ state: 'pending', id: expect.any(String), question: 'shared-client' });
+    expect(JSON.stringify(reply)).not.toContain(opaqueState);
+    const editor = await service.remoteEditor(drive);
+    expect(editor.configuration).toEqual(reply);
+    const next = await service.continueRemoteConfig(reply.id, true);
+    if (next.state !== 'pending') throw new Error('Missing token confirmation.');
+    expect(next.question).toBe('refresh-token');
+    expect(fetch.mock.calls.some(([url, options]) => new URL(String(url)).pathname === '/config/update'
+      && JSON.parse(String(options?.body)).opt.state === opaqueState)).toBe(true);
+    await expect(service.continueRemoteConfig(reply.id, true)).resolves.toMatchObject({ state: 'incomplete' });
+    await expect(service.continueRemoteConfig(next.id, true)).rejects.toThrow('Invalid configuration answer');
+    const last = await service.continueRemoteConfig(next.id, false);
+    if (last.state !== 'pending') throw new Error('Missing shared drive prompt.');
+    expect(last.question).toBe('shared-drive');
+    await expect(service.continueRemoteConfig(last.id, true)).rejects.toThrow('Invalid configuration answer');
+    await expect(service.continueRemoteConfig(last.id, false)).resolves.toEqual({ state: 'complete' });
+    expect((await service.remoteEditor(drive)).configuration).toBeUndefined();
+  });
+
+  it('rejects continuing after an external edit to the same remote', async () => {
+    const dump = { drive: { type: 'drive', scope: 'drive' } };
+    const { fetch, service } = fixture(dump, [sharedClient]);
+    const reply = await service.updateRemote(drive);
+    if (reply.state !== 'pending') throw new Error('Missing continuation.');
+    dump.drive.scope = 'drive.readonly';
+    const calls = fetch.mock.calls.length;
+    await expect(service.continueRemoteConfig(reply.id, true)).resolves.toMatchObject({ state: 'incomplete', message: expect.stringContaining('remote changed') });
+    expect(fetch.mock.calls.slice(calls).map(([url]) => new URL(String(url)).pathname)).not.toContain('/config/update');
+  });
+
+  it.each(['executeId', 'configPath'] as const)('checks the saved %s even when an attached client is reused', async (field) => {
+    const { daemon, service } = fixture({ drive: { type: 'drive' } }, [sharedClient]);
+    const reply = await service.updateRemote(drive);
+    if (reply.state !== 'pending') throw new Error('Missing continuation.');
+    daemon[field] += '-changed';
+    expect((await service.remoteEditor(drive)).configuration).toBeUndefined();
+    await expect(service.continueRemoteConfig(reply.id, true)).resolves.toMatchObject({ state: 'incomplete' });
+  });
+
+  it.each(['disconnect', 'missing remote'])('reports an incomplete write when the post-write check finds %s', async (failure) => {
+    const dump = { drive: { type: 'drive' } };
+    const { daemon, fetch, service } = fixture(dump, [sharedClient]);
+    const implementation = fetch.getMockImplementation()!;
+    fetch.mockImplementation(async (input, options) => {
+      if (new URL(String(input)).pathname === '/config/get') {
+        if (failure === 'missing remote') return Response.json({});
+        daemon.connected = false;
+      }
+      return implementation(input, options);
+    });
+    await expect(service.updateRemote(drive)).resolves.toMatchObject({
+      state: 'incomplete', message: expect.stringContaining('could not be resumed'),
+    });
+  });
+
+  it('reports unsupported questions and embedded errors without returning backend values', async () => {
+    const privateValue = secret();
+    const { service } = fixture({ drive: { type: 'drive' } }, [
+      { State: privateValue, Option: { Name: 'config_token', Default: privateValue } },
+      { Error: privateValue },
+      {},
+    ]);
+    const unsupported = await service.updateRemote(drive);
+    const failure = await service.updateRemote(drive);
+    expect(unsupported).toMatchObject({ state: 'incomplete', message: expect.stringContaining('cannot display') });
+    expect(failure).toMatchObject({ state: 'incomplete', message: expect.stringContaining('configuration error') });
+    expect(JSON.stringify([unsupported, failure])).not.toContain(privateValue);
+    await expect(service.updateRemote(drive)).resolves.toEqual({ state: 'complete' });
   });
 });
 

@@ -1,7 +1,8 @@
-import { randomBytes } from 'node:crypto';
-import type { CryptDraft, ProviderInfo, ProviderOptionSpec, RemoteDraft, RemoteEditorData, RemoteParameters, RemoteSummary } from '@shared/types';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
+import type { CryptDraft, PendingRemoteConfig, ProviderInfo, ProviderOptionSpec, RemoteConfigResult, RemoteDraft, RemoteEditorData, RemoteParameters, RemoteSummary } from '@shared/types';
 import type { RcloneAuth } from './rcloneAuth';
 import { describeFs, RcloneClient, remoteFs, validRemoteName } from './rcloneClient';
+import type { RcloneSupervisor } from './rcloneSupervisor';
 import { createSerialQueue } from './serialQueue';
 
 const POPULAR = ['drive', 'crypt', 's3', 'b2', 'onedrive', 'dropbox', 'sftp', 'webdav', 'box', 'pcloud', 'mega', 'local'];
@@ -12,6 +13,45 @@ const DEFAULT_SECRET_BITS = 256;
 const MAX_SECRET_BITS = 4096;
 const BITS_PER_BYTE = 8;
 const WRITE_OPTIONS = { obscure: true, nonInteractive: true };
+const QUESTIONS = new Map<string, PendingRemoteConfig['question']>([
+  ['config_shared_client_id', 'shared-client'],
+  ['config_refresh_token', 'refresh-token'],
+  ['config_change_team_drive', 'shared-drive'],
+]);
+
+interface ConfigContinuation {
+  client: RcloneClient;
+  type: string;
+  identity: string;
+  state: string;
+  configFingerprint: string;
+  prompt: PendingRemoteConfig;
+}
+
+function configQuestion(raw: unknown) {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const { Name, Type, Default, IsPassword, Sensitive } = raw as Record<string, unknown>;
+  if (typeof Name !== 'string' || IsPassword === true || Sensitive === true || (Type !== 'bool' && typeof Default !== 'boolean')) return undefined;
+  return QUESTIONS.get(Name);
+}
+
+async function configIdentity(rc: RcloneClient): Promise<string | undefined> {
+  try {
+    const [{ executeId }, { config }] = await Promise.all([rc.call('job/list'), rc.call('config/paths')]);
+    if (typeof executeId === 'string' && executeId && typeof config === 'string' && config) return JSON.stringify([executeId, config]);
+  } catch {
+    return undefined;
+  }
+}
+
+function configFingerprint(config: Record<string, unknown>): string {
+  const entries = Object.keys(config).sort().map((key) => [key, config[key]]);
+  return createHash('sha256').update(JSON.stringify(entries)).digest('hex');
+}
+
+function incompleteConfig(reason: string): RemoteConfigResult {
+  return { state: 'incomplete', message: `${reason} rclone may have saved partial changes. Open the remote’s editor to retry or finish configuration in rclone.` };
+}
 
 export function requireRemoteName(name: unknown): asserts name is string {
   if (!validRemoteName(name)) throw new Error('Invalid rclone remote name.');
@@ -114,8 +154,28 @@ function validateCryptParameters(remotes: RemoteSummary[], name: string, config:
   assertCryptTarget(remotes, name, target);
 }
 
-export function openRemotes(client: () => RcloneClient, auth: Pick<RcloneAuth, 'token'>) {
+export function openRemotes({ client, isCurrentClient }: Pick<RcloneSupervisor, 'client' | 'isCurrentClient'>, auth: Pick<RcloneAuth, 'token'>) {
   const write = createSerialQueue();
+  const continuations = new Map<string, ConfigContinuation>();
+
+  async function configResult(rc: RcloneClient, name: string, type: string, identity: string | undefined, response: Record<string, unknown>): Promise<RemoteConfigResult> {
+    const { State, Option, Error: failure } = response;
+    if (failure !== undefined && failure !== '') return incompleteConfig('rclone reported a configuration error.');
+    if ((State === undefined || State === '') && Option == null) return { state: 'complete' };
+    const question = configQuestion(Option);
+    if (typeof State !== 'string' || !State || !question) {
+      return incompleteConfig('rclone requested a configuration step that LudyRudy cannot display.');
+    }
+    const [config, currentIdentity] = await Promise.all([
+      rc.call('config/get', { name }).catch(() => undefined), configIdentity(rc),
+    ]);
+    if (!identity || identity !== currentIdentity || config?.type !== type || !isCurrentClient(rc)) {
+      return incompleteConfig('The configuration step could not be resumed.');
+    }
+    const prompt: PendingRemoteConfig = { state: 'pending', id: randomUUID(), question };
+    continuations.set(name, { client: rc, type, identity, state: State, configFingerprint: configFingerprint(config), prompt });
+    return prompt;
+  }
 
   async function listProviders(rc = client()): Promise<ProviderInfo[]> {
     const { providers } = await rc.call('config/providers');
@@ -133,7 +193,7 @@ export function openRemotes(client: () => RcloneClient, auth: Pick<RcloneAuth, '
     return config;
   }
 
-  function createRemote(draft: RemoteDraft): Promise<void> {
+  function createRemote(draft: RemoteDraft): Promise<RemoteConfigResult> {
     return write(async () => {
       requireRemoteName(draft?.name);
       const rc = client();
@@ -143,7 +203,11 @@ export function openRemotes(client: () => RcloneClient, auth: Pick<RcloneAuth, '
       if (!provider) throw new Error('Unknown rclone provider.');
       const config = configFor(draft, provider.name);
       if (provider.isCrypt) validateCryptParameters(remotes, draft.name, config);
-      await rc.call('config/create', { name: draft.name, type: provider.name, parameters: config, opt: WRITE_OPTIONS });
+      const identity = await configIdentity(rc);
+      if (!isCurrentClient(rc)) throw new Error('The rclone connection changed.');
+      continuations.delete(draft.name);
+      const result = await rc.call('config/create', { name: draft.name, type: provider.name, parameters: config, opt: WRITE_OPTIONS });
+      return configResult(rc, draft.name, provider.name, identity, result);
     });
   }
 
@@ -154,13 +218,20 @@ export function openRemotes(client: () => RcloneClient, auth: Pick<RcloneAuth, '
       if (!remote) return { providers: await listProviders(rc), values: {} };
       requireRemoteName(remote.name);
       const [providers, config] = await Promise.all([listProviders(rc), rc.call('config/get', { name: remote.name })]);
-      if (client() !== rc || config.type !== remote.type) throw new Error('The remote changed. Reopen the editor to reload its settings.');
+      if (!isCurrentClient(rc) || config.type !== remote.type) throw new Error('The remote changed. Reopen the editor to reload its settings.');
       const provider = providers.find(({ name }) => name === config.type);
       if (!provider) throw new Error('Unknown rclone provider.');
-      return projectRemoteEditor(provider, config);
+      const data = projectRemoteEditor(provider, config);
+      const current = continuations.get(remote.name);
+      if (current?.client === rc && current.configFingerprint === configFingerprint(config)
+        && current.identity === await configIdentity(rc) && isCurrentClient(rc)
+        && continuations.get(remote.name) === current) {
+        data.configuration = current.prompt;
+      }
+      return data;
     },
     createRemote,
-    createCryptRemote(draft: CryptDraft): Promise<void> {
+    createCryptRemote(draft: CryptDraft): Promise<RemoteConfigResult> {
       requireRemoteName(draft?.targetRemote);
       if (typeof draft.targetPath !== 'string' || typeof draft.password !== 'string' || !draft.password ||
         (draft.salt !== undefined && typeof draft.salt !== 'string') ||
@@ -173,7 +244,7 @@ export function openRemotes(client: () => RcloneClient, auth: Pick<RcloneAuth, '
         directory_name_encryption: draft.directoryNameEncryption,
       } });
     },
-    updateRemote(draft: RemoteDraft): Promise<void> {
+    updateRemote(draft: RemoteDraft): Promise<RemoteConfigResult> {
       return write(async () => {
         requireRemoteName(draft?.name);
         const rc = client();
@@ -183,13 +254,43 @@ export function openRemotes(client: () => RcloneClient, auth: Pick<RcloneAuth, '
         if (draft.type !== existing.type) throw new Error('The remote provider cannot be changed.');
         const config = configFor(draft, existing.type);
         if (existing.isCrypt && 'remote' in config) validateCryptParameters(remotes, draft.name, config);
-        await rc.call('config/update', { name: draft.name, parameters: config, opt: WRITE_OPTIONS });
+        const identity = await configIdentity(rc);
+        if (!isCurrentClient(rc)) throw new Error('The rclone connection changed.');
+        continuations.delete(draft.name);
+        const result = await rc.call('config/update', { name: draft.name, parameters: config, opt: WRITE_OPTIONS });
+        return configResult(rc, draft.name, existing.type, identity, result);
+      });
+    },
+    continueRemoteConfig(id: string, answer: boolean): Promise<RemoteConfigResult> {
+      return write(async () => {
+        const entry = [...continuations].find(([, step]) => step.prompt.id === id);
+        if (!entry) return incompleteConfig('This configuration step expired.');
+        const [name, current] = entry;
+        const rc = current.client;
+        if (answer !== (current.prompt.question === 'shared-client')) {
+          throw new Error('Invalid configuration answer.');
+        }
+        continuations.delete(name);
+        if (!isCurrentClient(rc)) return incompleteConfig('The rclone connection changed.');
+        const [config, identity] = await Promise.all([
+          rc.call('config/get', { name }).catch(() => undefined), configIdentity(rc),
+        ]);
+        if (!isCurrentClient(rc) || identity !== current.identity || config?.type !== current.type
+          || configFingerprint(config) !== current.configFingerprint) {
+          return incompleteConfig('The remote changed while configuration was paused.');
+        }
+        const result = await rc.call('config/update', {
+          name, parameters: {},
+          opt: { ...WRITE_OPTIONS, continue: true, state: current.state, result: String(answer) },
+        });
+        return configResult(rc, name, current.type, identity, result);
       });
     },
     deleteRemote(name: string): Promise<void> {
       return write(async () => {
         requireRemoteName(name);
         await client().call('config/delete', { name });
+        continuations.delete(name);
       });
     },
     async testRemote(name: string): Promise<void> {

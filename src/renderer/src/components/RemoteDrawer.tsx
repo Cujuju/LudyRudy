@@ -14,6 +14,7 @@ import { providerName } from '../lib/remotes';
 import type { AppStore } from '../store';
 import { ProviderCatalogDialog } from './ProviderCatalogDialog';
 import { ProviderIcon } from './ProviderIcon';
+import { RemoteConfigStep, useRemoteConfiguration } from './RemoteConfigStep';
 import { Drawer, Empty, Feedback, FormActions, SecretInput, Select, Toggle } from './ui';
 
 const KEEP_SAVED_VALUE = 'Leave blank to keep the saved value';
@@ -100,7 +101,7 @@ export function RemoteDrawer(props: { store: AppStore; remote?: RemoteSummary; c
   const [session, setSession] = createSignal<AuthSession>();
   const lookup = useAction();
   const authAction = useAction();
-  const saveAction = useAction();
+  const { action: saveAction, configuration, setConfiguration, save: writeConfig } = useRemoteConfiguration(() => props.close());
   const busy = () => saveAction.pending();
   const provider = () => providers().find((item) => item.name === kind());
   const auth = () => {
@@ -130,13 +131,15 @@ export function RemoteDrawer(props: { store: AppStore; remote?: RemoteSummary; c
     const value = String(optionValue(option, values()) ?? '');
     return choices.length > 0 && (!value || !choices.some((example) => example.value === value));
   });
-  const cannotSave = () => !provider() || authActive() || authAction.pending() || missingRequiredChoice()
+  const cannotSave = () => !!configuration() || !provider() || authActive() || authAction.pending() || missingRequiredChoice()
     || (!!provider()?.isOAuth && !props.remote && !authComplete());
 
   function load() {
     void lookup.run(async () => {
       const remote = untrack(() => props.remote);
-      setEditor(await window.api.remoteEditor(remote ? { name: remote.name, type: remote.type } : undefined));
+      const data = await window.api.remoteEditor(remote ? { name: remote.name, type: remote.type } : undefined);
+      setEditor(data);
+      setConfiguration(data.configuration);
     });
   }
   onMount(load);
@@ -170,7 +173,7 @@ export function RemoteDrawer(props: { store: AppStore; remote?: RemoteSummary; c
 
   async function save() {
     if (cannotSave()) return;
-    if (await saveAction.run(() => untrack(() => {
+    await writeConfig(() => untrack(() => {
       const cleaned = Object.fromEntries(fields().flatMap((option) => {
         const key = option.name;
         const value = parameters()[key];
@@ -179,13 +182,13 @@ export function RemoteDrawer(props: { store: AppStore; remote?: RemoteSummary; c
       const id = authComplete() ? auth()?.id : undefined;
       const draft = { name: name().trim(), type: kind(), parameters: cleaned, ...(id ? { authSessionId: id } : {}) };
       return props.remote ? window.api.updateRemote(draft) : window.api.createRemote(draft);
-    }))) props.close();
+    }));
   }
 
   return (
     <Drawer title={props.remote ? 'Edit remote' : 'Add remote'} description="Configure a storage provider for rclone." busy={busy()} close={props.close}>
       <form class="form-stack" onSubmit={(event) => { event.preventDefault(); void save(); }}>
-        <fieldset disabled={busy()}>
+        <fieldset disabled={busy() || !!configuration()}>
           <label class="field">Remote name<input value={name()} readonly={!!props.remote} required onInput={(event) => setName(event.currentTarget.value)} /></label>
           <Show when={!props.remote} fallback={
             <p class="row secondary"><ProviderIcon type={kind()} />Provider: {providerName(kind())}</p>
@@ -252,9 +255,13 @@ export function RemoteDrawer(props: { store: AppStore; remote?: RemoteSummary; c
             </details>
           </Show>
         </fieldset>
-        <Feedback action={saveAction} />
-        <FormActions label={props.remote ? 'Save remote' : 'Add remote'} close={props.close} busy={busy()}
-          disabled={cannotSave()} />
+        <Show when={configuration()} fallback={
+          <>
+            <Feedback action={saveAction} />
+            <FormActions label={props.remote ? 'Save remote' : 'Add remote'} close={props.close} busy={busy()} disabled={cannotSave()} />
+          </>
+        }>{(step) => <RemoteConfigStep configuration={step()} action={saveAction} save={writeConfig} close={props.close}
+          edit={props.remote ? () => { saveAction.clear(); setConfiguration(undefined); } : undefined} />}</Show>
       </form>
       <Show when={catalogOpen()}>
         <ProviderCatalogDialog providers={providers()} selected={kind()} focusFallback={() => moreProviders}
