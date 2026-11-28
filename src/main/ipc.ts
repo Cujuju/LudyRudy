@@ -7,7 +7,8 @@ import { parseBuildInfo } from '@shared/buildInfo';
 import { setConfigPassword } from './configPassword';
 import type { openJobManager } from './jobManager';
 import type { openMountManager } from './mountManager';
-import { nativeFiles, remotePath } from './nativeFiles';
+import { nativeFiles } from './nativeFiles';
+import { remotePath } from '@shared/remotePath';
 import { resolveRclone, supportsLaunchAtLogin } from './paths';
 import { localVersion } from './prereqs';
 import { describeFs, NO_CLOBBER, RcloneClient, remoteFs } from './rcloneClient';
@@ -32,6 +33,7 @@ interface Services {
 }
 
 export function registerIpc({ daemon, mounts, jobs, auth, remotes, current, refresh, sendNotice }: Services): void {
+  const browserPath = (path: unknown, allowRoot = false) => remotePath(path, allowRoot, daemon.current().daemon.hostPlatform);
   const isMain = (sender: Electron.WebContents) => sender === mainWindow()?.webContents;
   const invoke = <K extends keyof typeof INVOKE>(method: K, handler: DesktopApi[K]) => {
     ipcMain.handle(INVOKE[method], (event, ...args: Parameters<DesktopApi[K]>) => {
@@ -129,18 +131,18 @@ export function registerIpc({ daemon, mounts, jobs, auth, remotes, current, refr
     return ((await daemon.client().call('vfs/list')).vfses ?? []).map((fs) => describeFs(fs, windows).display);
   });
   invoke('vfsStats', async (remote, path = '') => {
-    const { inUse, metadataCache } = await daemon.forRemote(remote).call('vfs/stats', { fs: remoteFs(remote, remotePath(path, true)) });
+    const { inUse, metadataCache } = await daemon.forRemote(remote).call('vfs/stats', { fs: remoteFs(remote, browserPath(path, true)) });
     const cache = metadataCache as { files?: unknown; dirs?: unknown } | undefined;
     const count = (value: unknown) => typeof value === 'number' ? value : 0;
     return { inUse: count(inUse), files: count(cache?.files), dirs: count(cache?.dirs) };
   });
   invoke('vfsRefresh', async (remote, path = '', dir, recursive = false) => {
     await daemon.forRemote(remote).call('vfs/refresh', {
-      fs: remoteFs(remote, remotePath(path, true)), ...(dir === undefined ? {} : { dir: remotePath(dir, true) }), recursive: String(recursive),
+      fs: remoteFs(remote, browserPath(path, true)), ...(dir === undefined ? {} : { dir: browserPath(dir, true) }), recursive: String(recursive),
     });
   });
   invoke('vfsForget', async (remote, path = '', dir) => {
-    await daemon.forRemote(remote).call('vfs/forget', { fs: remoteFs(remote, remotePath(path, true)), ...(dir === undefined ? {} : { dir: remotePath(dir, true) }) });
+    await daemon.forRemote(remote).call('vfs/forget', { fs: remoteFs(remote, browserPath(path, true)), ...(dir === undefined ? {} : { dir: browserPath(dir, true) }) });
   });
   invoke('listJobs', () => Promise.resolve(jobs.list()));
   invoke('saveJob', (draft) => Promise.resolve(jobs.save(draft)));
@@ -150,19 +152,19 @@ export function registerIpc({ daemon, mounts, jobs, auth, remotes, current, refr
   invoke('browse', (remote, path) => {
     const rc = daemon.forRemote(remote);
     const isCrypt = daemon.current().remotes.some((item) => item.name === remote && item.isCrypt);
-    return rc.list(remote, remotePath(path, true), isCrypt);
+    return rc.list(remote, browserPath(path, true), isCrypt);
   });
   invoke('quota', (remote) => daemon.forRemote(remote).quota(remote));
-  invoke('stat', (remote, path) => daemon.forRemote(remote).stat(remote, remotePath(path, true)));
+  invoke('stat', (remote, path) => daemon.forRemote(remote).stat(remote, browserPath(path, true)));
   for (const [method, command] of [['mkdir', 'operations/mkdir'], ['deleteFile', 'operations/deletefile'], ['purge', 'operations/purge']] as const) {
-    invoke(method, async (remote, path) => { await daemon.forRemote(remote).call(command, { fs: remoteFs(remote), remote: remotePath(path) }); });
+    invoke(method, async (remote, path) => { await daemon.forRemote(remote).call(command, { fs: remoteFs(remote), remote: browserPath(path) }); });
   }
   for (const [method, command] of [['copyFile', 'operations/copyfile'], ['moveFile', 'operations/movefile']] as const) {
     invoke(method, async (src, srcPath, dst, dstPath) => {
       const rc = daemon.forRemote(src);
       daemon.forRemote(dst);
-      const from = remotePath(srcPath);
-      const to = remotePath(dstPath);
+      const from = browserPath(srcPath);
+      const to = browserPath(dstPath);
       if (method === 'moveFile') {
         if (src === dst && from === to) return;
         await rc.requireMissingDestination(dst, to);
@@ -178,8 +180,8 @@ export function registerIpc({ daemon, mounts, jobs, auth, remotes, current, refr
   }
   invoke('moveDirectory', async (remote, source, destination) => {
     const rc = daemon.forRemote(remote);
-    const from = remotePath(source);
-    const to = remotePath(destination);
+    const from = browserPath(source);
+    const to = browserPath(destination);
     if (from === to) return;
     if (to.startsWith(from + '/') || from.startsWith(to + '/')) throw new Error('Choose a destination outside the source tree.');
     await rc.requireMissingDestination(remote, to);

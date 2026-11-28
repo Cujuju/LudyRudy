@@ -4,7 +4,7 @@ import { nativeFiles } from './nativeFiles';
 import { RcloneClient } from './rcloneClient';
 import type { RcloneSupervisor } from './rcloneSupervisor';
 
-const dialog = vi.hoisted(() => ({ showOpenDialog: vi.fn() }));
+const dialog = vi.hoisted(() => ({ showOpenDialog: vi.fn(), showSaveDialog: vi.fn() }));
 vi.mock('electron', () => ({ dialog, shell: {} }));
 vi.mock('./paths', () => ({}));
 vi.mock('./window', () => ({ mainWindow: () => undefined }));
@@ -20,10 +20,21 @@ afterEach(() => {
 function managedFiles() {
   const client = new RcloneClient('http://localhost:5572');
   return nativeFiles({
-    current: () => ({ daemon: { mode: 'managed' } }),
+    current: () => ({ daemon: { mode: 'managed', hostPlatform: process.platform } }),
     forRemote: () => client,
   } as unknown as RcloneSupervisor);
 }
+
+it.skipIf(process.platform === 'win32')('downloads a literal POSIX filename and preserves its suggested name', async () => {
+  const name = 'part\\name\r\n.txt';
+  const savePath = resolve(name);
+  dialog.showSaveDialog.mockResolvedValue({ canceled: false, filePath: savePath });
+  const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValueOnce(Response.json({}));
+  vi.stubGlobal('fetch', fetch);
+  await expect(managedFiles().downloadFile('drive', `docs/${name}`, name)).resolves.toBe(true);
+  expect(dialog.showSaveDialog).toHaveBeenCalledWith({ defaultPath: name });
+  expect(JSON.parse(String(fetch.mock.lastCall?.[1]?.body))).toMatchObject({ srcRemote: `docs/${name}`, dstRemote: name });
+});
 
 it('reports completed and skipped uploads after a destination appears during the batch', async () => {
   const first = resolve('first.txt');

@@ -1,7 +1,8 @@
 import { dialog, shell } from 'electron';
-import { basename, dirname, posix, win32 } from 'node:path';
+import { basename, dirname, posix } from 'node:path';
 import { mkdir } from 'node:fs/promises';
 import type { UploadResult } from '@shared/ipc';
+import { remotePath } from '@shared/remotePath';
 import { errorMessage, managedPaths, type RcloneSupervisor } from './rcloneSupervisor';
 import { NO_CLOBBER, remoteFs } from './rcloneClient';
 import { profileFile } from './paths';
@@ -23,15 +24,6 @@ function openDialog(options: Electron.OpenDialogOptions): Promise<Electron.OpenD
   return withDialogFocus((parent) => parent ? dialog.showOpenDialog(parent, options) : dialog.showOpenDialog(options));
 }
 
-export function remotePath(path: unknown, allowRoot = false): string {
-  if (typeof path !== 'string' || /[\0\r\n]/.test(path) || path.includes('\\') || path.startsWith('/') || path.split('/').includes('..')) {
-    throw new Error('Invalid remote path.');
-  }
-  const normalized = posix.normalize(path).replace(/\/$/, '');
-  if (normalized === '.' && !allowRoot) throw new Error('Select a file or directory below the remote root.');
-  return normalized === '.' ? '' : normalized;
-}
-
 export function nativeFiles(daemon: RcloneSupervisor) {
   function localTransfer(remote: string) {
     if (daemon.current().daemon.mode !== 'managed') throw new Error('Native file transfers require the managed daemon.');
@@ -50,7 +42,7 @@ export function nativeFiles(daemon: RcloneSupervisor) {
       return canceled ? null : filePaths[0] ?? null;
     },
     async uploadFiles(remote: string, directory: string): Promise<UploadResult> {
-      const path = remotePath(directory, true);
+      const path = remotePath(directory, true, daemon.current().daemon.hostPlatform);
       const rc = localTransfer(remote);
       const { filePaths, canceled } = await openDialog({ properties: ['openFile', 'multiSelections'] });
       const uploaded: string[] = [];
@@ -79,11 +71,14 @@ export function nativeFiles(daemon: RcloneSupervisor) {
       return { uploaded };
     },
     async downloadFile(remote: string, source: string, suggestedName?: string): Promise<boolean> {
-      const path = remotePath(source);
+      const path = remotePath(source, false, daemon.current().daemon.hostPlatform);
       const rc = localTransfer(remote);
       const fallback = posix.basename(path);
-      const defaultPath = win32.basename(suggestedName || fallback).replace(/[\x00-\x1f]/g, '');
-      const options = { defaultPath: defaultPath && !['.', '..'].includes(defaultPath) ? defaultPath : fallback };
+      const suggested = basename(suggestedName || fallback);
+      const clean = (value: string) => process.platform === 'win32'
+        ? value.replace(/[<>:"/\\|?*\x00-\x1f]/g, '') : value.replace(/\0/g, '');
+      const defaultPath = [clean(suggested), clean(fallback)].find((value) => value && !['.', '..'].includes(value));
+      const options = { defaultPath };
       const { filePath, canceled } = await withDialogFocus((parent) =>
         parent ? dialog.showSaveDialog(parent, options) : dialog.showSaveDialog(options));
       if (canceled || !filePath) return false;

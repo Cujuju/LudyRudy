@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { RemoteEntry, RemoteQuota } from '@shared/types';
-import { createBrowserCache, parentRemotePath } from './browserCache';
+import { editedRemotePath, parentRemotePath, remotePath } from '@shared/remotePath';
+import { createBrowserCache } from './browserCache';
 
 const entry = (name: string): RemoteEntry => ({
   path: name, name, size: 128, mimeType: 'text/plain', modTime: '2026-01-01T00:00:00Z', isDir: false,
@@ -11,6 +12,34 @@ const quota = (used: number): RemoteQuota => ({
 });
 
 describe('browserCache', () => {
+  it('preserves unchanged parent segments when a textarea normalizes carriage returns', () => {
+    expect(editedRemotePath('a\n/b\n//./new', 'a\r\n/b\r/old', 'darwin')).toBe('a\r\n/b\r/new');
+    expect(editedRemotePath('other/b\n/new', 'a\r\n/b\r/old', 'darwin')).toBe('other/b\n/new');
+    expect(editedRemotePath('a\n/child', 'a\r\n/', 'darwin')).toBe('a\r\n/child');
+  });
+  it('invalidates canonical paths without treating literal backslashes as separators', async () => {
+    const cache = createBrowserCache();
+    const backslash = 'parent/with\\slash';
+    await cache.loadDirectory('drive', backslash, async () => []);
+    await cache.loadDirectory('drive', 'parent/with/slash', async () => []);
+    expect(cache.peekDirectory('drive', 'parent//./with\\slash/')).toBeDefined();
+    cache.invalidatePrefix('drive', 'parent//./with\\slash/');
+    expect(cache.peekDirectory('drive', backslash)).toBeUndefined();
+    expect(cache.peekDirectory('drive', 'parent/with/slash')).toBeDefined();
+  });
+
+  it('preserves POSIX literals and guards relative path traversal and the root', () => {
+    const literal = 'a/with\\slash\r\n.txt';
+    expect(remotePath(literal, false, 'darwin')).toBe(literal);
+    expect(() => remotePath(literal, false, 'win32')).toThrow('Invalid remote path');
+    expect(() => remotePath(literal, false, null)).toThrow('Invalid remote path');
+    expect(() => remotePath('/a')).toThrow('Invalid remote path');
+    expect(() => remotePath('a/../b')).toThrow('Invalid remote path');
+    expect(() => remotePath('a/\0')).toThrow('Invalid remote path');
+    expect(remotePath('././', true)).toBe('');
+    expect(() => remotePath('././')).toThrow('below the remote root');
+  });
+
   it('returns fresh cached listings without re-fetching and marks them stale after TTL', async () => {
     let clock = 1_000;
     const cache = createBrowserCache({ now: () => clock, directoryFreshMs: 10_000 });
@@ -145,6 +174,6 @@ describe('browserCache', () => {
     expect(parentRemotePath('')).toBe('');
     expect(parentRemotePath('top')).toBe('');
     expect(parentRemotePath('a/b/c')).toBe('a/b');
-    expect(parentRemotePath('/a/b/')).toBe('a');
+    expect(parentRemotePath('a//./b/')).toBe('a');
   });
 });

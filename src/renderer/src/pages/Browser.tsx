@@ -7,11 +7,11 @@ import {
   Pencil, Presentation, RefreshCw, Settings, Trash2, Upload,
 } from 'lucide-solid';
 import type { RemoteEntry, RemoteQuota } from '@shared/types';
+import { editedRemotePath, parentRemotePath } from '@shared/remotePath';
 import { ProviderIcon } from '../components/ProviderIcon';
 import { Quota } from '../components/Quota';
 import { Confirm, Drawer, Empty, Feedback, FormActions, PageHeader, SearchField, Select } from '../components/ui';
 import { errorMessage, useAction } from '../lib/actions';
-import { parentRemotePath } from '../lib/browserCache';
 import {
   BROWSER_COLUMNS, classifyEntry, DEFAULT_BROWSER_COLUMNS, isBrowserColumnList, nextSort, sortEntries,
   type BrowserColumnKey, type FileKind, type SortKey, type SortState,
@@ -57,16 +57,24 @@ function SortHeader(props: { label: string; sortKey: SortKey; sort: SortState; o
   );
 }
 
-function PathDialog(props: { edit: Edit; close: () => void }) {
+function PathDialog(props: { edit: Edit; platform: string | null; close: () => void }) {
   const action = useAction();
-  let input!: HTMLInputElement;
+  let input!: HTMLTextAreaElement;
   return (
     <Drawer title={props.edit.label} busy={action.pending()} close={props.close}>
       <form class="form-stack" onSubmit={(event) => {
         event.preventDefault();
-        void action.run(() => untrack(() => props.edit.submit(input.value))).then((ok) => { if (ok) props.close(); });
+        void action.run(() => untrack(() => {
+          return props.edit.submit(editedRemotePath(input.value, props.edit.initial, props.platform));
+        })).then((ok) => { if (ok) props.close(); });
       }}>
-        <label class="field">Path on this remote<input ref={input} class="path" required value={props.edit.initial} disabled={action.pending()} /></label>
+        <label class="field">Path on this remote<textarea ref={input} class="path" rows={2} required value={props.edit.initial}
+          disabled={action.pending()} onKeyDown={(event) => {
+            if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
+              event.preventDefault();
+              event.currentTarget.form?.requestSubmit();
+            }
+          }} /></label>
         <Feedback action={action} />
         <FormActions label={props.edit.label} close={props.close} busy={action.pending()} />
       </form>
@@ -156,16 +164,16 @@ function BrowserSession(props: PageProps) {
 
   async function loadListing(target: { remote: string; path: string }, force = false): Promise<void> {
     const seq = ++listingSeq;
-    const cached = force ? undefined : cache.peekDirectory(target.remote, target.path);
-    if (cached) {
-      setEntries({ target, items: cached.items, loading: !cached.fresh, error: '' });
-      if (cached.fresh) return;
-    } else {
-      const prev = untrack(entries);
-      const keep = prev?.target.remote === target.remote && prev.target.path === target.path ? prev.items : [];
-      setEntries({ target, items: keep, loading: true, error: '' });
-    }
     try {
+      const cached = force ? undefined : cache.peekDirectory(target.remote, target.path);
+      if (cached) {
+        setEntries({ target, items: cached.items, loading: !cached.fresh, error: '' });
+        if (cached.fresh) return;
+      } else {
+        const prev = untrack(entries);
+        const keep = prev?.target.remote === target.remote && prev.target.path === target.path ? prev.items : [];
+        setEntries({ target, items: keep, loading: true, error: '' });
+      }
       const items = await cache.loadDirectory(
         target.remote, target.path, () => window.api.browse(target.remote, target.path), { force: force || !!cached },
       );
@@ -412,7 +420,8 @@ function BrowserSession(props: PageProps) {
           </footer>
         </section>
       </Show>
-      <Show when={edit()} keyed>{(item) => <PathDialog edit={item} close={() => setEdit(undefined)} />}</Show>
+      <Show when={edit()} keyed>{(item) => <PathDialog edit={item} platform={props.store.snapshot()?.daemon.hostPlatform ?? null}
+        close={() => setEdit(undefined)} />}</Show>
     </>
   );
 }
