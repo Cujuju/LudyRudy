@@ -9,14 +9,14 @@ const draft: SyncJob = {
 };
 
 function fixture(initial: SyncJob[] = [draft], platform: string | null = 'linux') {
-  const status = { finished: false, success: false, executeId: 'daemon' };
+  const status = { finished: false, success: false, executeId: 'daemon', error: '' };
   const listedJobs = [16];
   const fetch = vi.fn<typeof globalThis.fetch>().mockImplementation(async (input) => {
     switch (new URL(String(input)).pathname) {
       case '/sync/sync':
       case '/sync/copy': return Response.json({ jobid: 16, executeId: 'daemon' });
       case '/job/list': return Response.json({ executeId: status.executeId, jobids: listedJobs });
-      case '/job/status': return Response.json({ ...status, error: crypto.randomUUID() });
+      case '/job/status': return Response.json(status);
       case '/job/stop': status.finished = true; return Response.json({});
       default: return Response.json({}, { status: 404 });
     }
@@ -104,6 +104,18 @@ describe('JobManager', () => {
     await manager.poll();
     expect(manager.runs()[0]?.state).toBe('stopped');
     expect(notify).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['directory not found', 'The directory was not found. Check the remote path.'],
+    [crypto.randomUUID(), 'rclone reported a job failure.'],
+  ])('shows only classified details for failed jobs', async (daemonError, error) => {
+    const { manager, status } = fixture();
+    await manager.runJob(draft.id);
+    status.finished = true;
+    status.error = daemonError;
+    await manager.poll();
+    expect(manager.runs()[0]).toMatchObject({ state: 'failed', error });
   });
 
   it('keeps a job stoppable after status failures and recovers its running state', async () => {

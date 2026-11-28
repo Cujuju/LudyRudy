@@ -89,7 +89,7 @@ const responses = {
   'mount/unmountall': isRecord,
   'vfs/list': shape({ vfses: nullable(arrayOf(nonEmptyString)) }),
   'vfs/stats': shape({ inUse: number, metadataCache: shape({ files: number, dirs: number }) }),
-  'vfs/refresh': isRecord,
+  'vfs/refresh': shape({ result: recordOf(string) }),
   'vfs/forget': isRecord,
   'operations/list': shape({ list: nullable(arrayOf(item)) }),
   'operations/about': shape({ total: quota, used: quota, free: quota, trashed: quota, other: quota }),

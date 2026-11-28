@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { RcloneClient } from './rcloneClient';
+import { NO_CLOBBER, RcloneClient } from './rcloneClient';
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -201,5 +201,81 @@ describe('RC response schemas', () => {
     await expect(client.stats()).resolves.toMatchObject({
       transferring: [{ name: 'file', size: 23, bytes: 0, speed: 0, eta: null }],
     });
+  });
+});
+
+describe('RC failure diagnostics', () => {
+  const client = new RcloneClient('http://localhost:5572');
+  const mount = () => client.call('mount/mount', { fs: 'drive:', mountPoint: '/mnt/drive' });
+
+  it.each([401, 403])('offers RC access guidance on HTTP %s', async (status) => {
+    vi.stubGlobal('fetch', vi.fn<typeof globalThis.fetch>().mockResolvedValue(new Response(null, { status })));
+    await expect(mount()).rejects.toMatchObject({
+      status, message: 'Check the rclone RC credentials and permissions.',
+    });
+  });
+
+  it('classifies known mount failures and keeps unknown output private', async () => {
+    const privateValue = crypto.randomUUID();
+    vi.stubGlobal('fetch', vi.fn<typeof globalThis.fetch>()
+      .mockResolvedValueOnce(Response.json({
+        error: 'mount option specified is not registered, or is invalid', input: { credential: privateValue },
+      }, { status: 500 }))
+      .mockResolvedValueOnce(Response.json({ error: `unrecognized backend error: ${privateValue}` }, { status: 500 })));
+    await expect(mount()).rejects.toMatchObject({
+      status: 500, message: 'Choose a mount type supported by the daemon.',
+    });
+    await expect(mount()).rejects.toMatchObject({ status: 500, message: 'rclone mount/mount returned HTTP 500.' });
+  });
+
+  it('preserves no-clobber diagnostics for known collisions only', async () => {
+    vi.stubGlobal('fetch', vi.fn<typeof globalThis.fetch>()
+      .mockImplementation(async () => Response.json({ error: 'immutable file modified' }, { status: 500 })));
+    const move = { srcFs: 'drive:', srcRemote: 'file', dstFs: 'drive:', dstRemote: 'other' };
+    await expect(client.call('operations/movefile', { ...move, _config: NO_CLOBBER })).rejects.toMatchObject({
+      status: 500, message: 'The destination already exists.',
+    });
+    await expect(client.call('operations/movefile', move)).rejects.toMatchObject({
+      status: 500, message: 'rclone operations/movefile returned HTTP 500.',
+    });
+  });
+
+  it('cancels an oversized error body and retains the generic HTTP error', async () => {
+    const cancel = vi.fn();
+    const oversized = new TextEncoder().encode(JSON.stringify({
+      error: 'mount option specified is not registered, or is invalid',
+      input: 'x'.repeat(64 * 1024),
+    }));
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) { controller.enqueue(oversized); },
+      cancel,
+    });
+    vi.stubGlobal('fetch', vi.fn<typeof globalThis.fetch>().mockResolvedValue(
+      new Response(stream, { status: 500, headers: { 'content-type': 'application/json' } }),
+    ));
+    await expect(mount()).rejects.toMatchObject({ status: 500, message: 'rclone mount/mount returned HTTP 500.' });
+    expect(cancel).toHaveBeenCalledOnce();
+  });
+});
+
+describe('VFS refresh results', () => {
+  const client = new RcloneClient('http://localhost:5572');
+  it('requests the root without a directory parameter', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(Response.json({ result: { '': 'OK' } }));
+    vi.stubGlobal('fetch', fetch);
+    await expect(client.refreshVfs('drive:', '', false)).resolves.toBeUndefined();
+    expect(JSON.parse(String(fetch.mock.lastCall?.[1]?.body))).toEqual({ fs: 'drive:', recursive: 'false' });
+  });
+
+  it.each([
+    [{ result: { missing: 'file does not exist' } }, 'The path was not found.'],
+    [{ result: { other: 'OK' } }, 'rclone could not refresh the mount cache.'],
+    [{ result: { missing: crypto.randomUUID() } }, 'rclone could not refresh the mount cache.'],
+    [{ result: { missing: true } }, 'rclone vfs/refresh returned an invalid response.'],
+  ])('checks the exact requested directory result', async (body, message) => {
+    const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(Response.json(body));
+    vi.stubGlobal('fetch', fetch);
+    await expect(client.refreshVfs('drive:', 'missing', false)).rejects.toMatchObject({ message });
+    expect(JSON.parse(String(fetch.mock.lastCall?.[1]?.body))).toEqual({ fs: 'drive:', dir: 'missing', recursive: 'false' });
   });
 });

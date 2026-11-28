@@ -135,9 +135,9 @@ export function registerIpc({ daemon, mounts, jobs, auth, remotes, current, refr
     return { inUse, files: metadataCache.files, dirs: metadataCache.dirs };
   });
   invoke('vfsRefresh', async (remote, path = '', dir, recursive = false) => {
-    await daemon.forRemote(remote).call('vfs/refresh', {
-      fs: remoteFs(remote, browserPath(path, true)), ...(dir === undefined ? {} : { dir: browserPath(dir, true) }), recursive: String(recursive),
-    });
+    await daemon.forRemote(remote).refreshVfs(
+      remoteFs(remote, browserPath(path, true)), dir === undefined ? '' : browserPath(dir, true), recursive,
+    );
   });
   invoke('vfsForget', async (remote, path = '', dir) => {
     await daemon.forRemote(remote).call('vfs/forget', { fs: remoteFs(remote, browserPath(path, true)), ...(dir === undefined ? {} : { dir: browserPath(dir, true) }) });
