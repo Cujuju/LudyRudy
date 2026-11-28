@@ -173,7 +173,7 @@ export function Transfers(props: PageProps) {
           )}</For>
         </section>
       </div>
-      <Show when={drawer()} keyed>{(job) => <JobDrawer job={job === 'new' ? undefined : job} attached={props.store.snapshot()?.daemon.mode === 'attached'} close={() => setDrawer(undefined)} />}</Show>
+      <Show when={drawer()} keyed>{(job) => <JobDrawer job={job === 'new' ? undefined : job} attached={props.store.snapshot()?.daemon.mode !== 'managed'} close={() => setDrawer(undefined)} />}</Show>
     </>
   );
 }

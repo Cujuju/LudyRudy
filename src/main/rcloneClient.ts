@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { isIP } from 'node:net';
 import type { ActiveMount, CompletedTransfer, RemoteParameters, RemoteEntry, RemoteQuota, RemoteSummary, TransferStats, MountProfile } from '@shared/types';
+import { isWindowsDrivePath } from './daemonPaths';
 
 export interface RcItem {
   Path: string;
@@ -97,14 +98,13 @@ const MOUNT_TIMEOUT_MS = 60_000;
 const SAFE_CONFIG_KEYS = ['type', 'provider', 'region', 'filename_encryption', 'directory_name_encryption'];
 const REMOTE_NAME = '[\\p{L}\\p{N}_.+@]+(?:[ -]+[\\p{L}\\p{N}_.+@-]+)*';
 const VALID_REMOTE_NAME = new RegExp(`^(?:${REMOTE_NAME})$(?![\\s\\S])`, 'u');
-export const validRemoteName = (name: unknown): name is string => typeof name === 'string' && VALID_REMOTE_NAME.test(name)
-  && !(process.platform === 'win32' && /^[a-z]$/i.test(name));
+export const validRemoteName = (name: unknown, windows: boolean): name is string => typeof name === 'string' && VALID_REMOTE_NAME.test(name)
+  && !(windows && /^[a-z]$/i.test(name));
 const PLAIN_TARGET = new RegExp(`^(${REMOTE_NAME}):`, 'u');
 const INLINE_TARGET = new RegExp(`^(:?${REMOTE_NAME})[,:]`, 'u');
-const DRIVE_PATH = /^[a-z]:[\\/]/i;
 
 export function describeFs(fs: string, windows: boolean): { remote: string | null; path: string | null; display: string } {
-  if (windows && DRIVE_PATH.test(fs)) return { remote: null, path: fs, display: fs };
+  if (windows && isWindowsDrivePath(fs)) return { remote: null, path: fs, display: fs };
   const remote = PLAIN_TARGET.exec(fs)?.[1];
   if (remote) return { remote, path: fs.slice(remote.length + 1), display: fs };
   // Inline connection strings can carry passwords and OAuth tokens in their overrides.

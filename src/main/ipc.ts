@@ -124,7 +124,10 @@ export function registerIpc({ daemon, mounts, jobs, auth, remotes, current, refr
   invoke('unmountAll', mutate(mounts.unmountAll));
   invoke('revealMount', mounts.revealMount);
   invoke('mountTypes', async () => (await daemon.client().call('mount/types')).mountTypes ?? []);
-  invoke('listVfs', async () => ((await daemon.client().call('vfs/list')).vfses ?? []).map((fs) => describeFs(fs, process.platform === 'win32').display));
+  invoke('listVfs', async () => {
+    const windows = daemon.current().daemon.hostPlatform === 'win32';
+    return ((await daemon.client().call('vfs/list')).vfses ?? []).map((fs) => describeFs(fs, windows).display);
+  });
   invoke('vfsStats', async (remote, path = '') => {
     const { inUse, metadataCache } = await daemon.forRemote(remote).call('vfs/stats', { fs: remoteFs(remote, remotePath(path, true)) });
     const cache = metadataCache as { files?: unknown; dirs?: unknown } | undefined;

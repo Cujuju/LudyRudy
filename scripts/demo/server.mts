@@ -165,7 +165,7 @@ export async function startDemoRclone() {
   }
   const methods: Record<string, (input: Record<string, unknown>) => object> = {
     '/rc/noop': (input) => input,
-    '/core/version': () => ({ version: 'v1.76.0' }),
+    '/core/version': () => ({ version: 'v1.76.0', os: process.platform === 'win32' ? 'windows' : process.platform }),
     '/core/pid': () => ({ pid: process.pid }),
     '/core/quit': () => { setImmediate(() => { void close().catch((error) => console.error('[demo]', error)); }); return {}; },
     '/core/stats-reset': () => { statsReset = true; return {}; },

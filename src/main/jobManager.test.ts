@@ -8,7 +8,7 @@ const draft: SyncJob = {
   excludes: ['*.tmp'], dryRunDefault: true, enabled: true,
 };
 
-function fixture(initial: SyncJob[] = [draft]) {
+function fixture(initial: SyncJob[] = [draft], platform: string | null = 'linux') {
   const status = { finished: false, success: false, executeId: 'daemon' };
   const listedJobs = [16];
   const fetch = vi.fn<typeof globalThis.fetch>().mockImplementation(async (input) => {
@@ -30,6 +30,8 @@ function fixture(initial: SyncJob[] = [draft]) {
   const disconnect = () => { current = false; };
   const manager = openJobManager({
     client: () => rc, isCurrentClient: (client) => current && client === rc,
+    platform: () => platform,
+    hasRemote: (name) => ['drive', 'vault', 'v'].includes(name),
     jobs: () => jobs, save: (value) => { jobs = value; }, notify, change,
   });
   return { manager, fetch, status, listedJobs, notify, change, disconnect };
@@ -38,6 +40,30 @@ function fixture(initial: SyncJob[] = [draft]) {
 afterEach(() => vi.unstubAllGlobals());
 
 describe('JobManager', () => {
+  it.each([
+    ['win32', 'C:\\Pictures', '\\\\server\\share\\photos', 'C:\\Pictures', '\\\\server\\share\\photos'],
+    ['win32', '//server/share/photos', 'vault:backup', '\\\\server\\share\\photos', 'vault:backup'],
+    ['linux', '/srv/photos', 'v:backup', '/srv/photos', 'v:backup'],
+    ['linux', '/srv/photos/', 'v:/backup', '/srv/photos', 'v:/backup'],
+  ])('uses %s daemon path syntax when saving and running a job', async (platform, source, destination, srcFs, dstFs) => {
+    const { manager, fetch } = fixture([], platform);
+    const job = manager.save({ ...draft, id: undefined, source, destination });
+    expect(job).toMatchObject({ source: srcFs, destination: dstFs });
+    await manager.runJob(job.id);
+    const write = fetch.mock.calls.find(([url]) => String(url).endsWith('/sync/sync'));
+    expect(JSON.parse(String(write?.[1]?.body))).toMatchObject({ srcFs, dstFs });
+  });
+
+  it.each(['/Pictures', '\\Pictures', 'C:Pictures', '\\\\server'])('rejects Windows paths missing their drive or share (%s)', (source) => {
+    const { manager } = fixture([], 'win32');
+    expect(() => manager.save({ ...draft, id: undefined, source })).toThrow('absolute path on the daemon host');
+  });
+
+  it('rejects a foreign drive path without a matching configured remote', () => {
+    const { manager } = fixture([], 'linux');
+    expect(() => manager.save({ ...draft, id: undefined, source: 'C:\\Pictures' })).toThrow('absolute path on the daemon host');
+  });
+
   it('persists job changes and rejects malformed or identical endpoints', () => {
     const { manager } = fixture([]);
     const { id: _, ...input } = draft;

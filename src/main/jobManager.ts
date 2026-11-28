@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
-import { isAbsolute, resolve } from 'node:path';
 import type { SyncJob, SyncJobRun } from '@shared/types';
 import type { Notify } from './mountManager';
+import { daemonPath, isDaemonAbsolute, isWindowsDrivePath } from './daemonPaths';
 import { remoteFs, validRemoteName, type RcloneClient } from './rcloneClient';
 
 const RECENT_RUN_LIMIT = 50;
@@ -9,6 +9,8 @@ const RECENT_RUN_LIMIT = 50;
 interface JobContext {
   client: () => RcloneClient;
   isCurrentClient: (client: RcloneClient) => boolean;
+  platform: () => string | null;
+  hasRemote: (name: string) => boolean;
   jobs: () => SyncJob[];
   save: (jobs: SyncJob[]) => void;
   notify: Notify;
@@ -23,12 +25,19 @@ interface ActiveRun {
   stopRequested: boolean;
 }
 
-function normalizeTarget(target: unknown): string {
+function normalizeTarget(target: unknown, platform: string | null, hasRemote: JobContext['hasRemote']): string {
   if (typeof target !== 'string' || /[\r\n\0]/.test(target)) throw new Error('Invalid job path.');
-  if (isAbsolute(target)) return resolve(target);
+  if (isDaemonAbsolute(target, platform)) {
+    const paths = daemonPath(platform);
+    const normalized = paths.normalize(target);
+    return normalized === paths.parse(normalized).root || !normalized.endsWith(paths.sep) ? normalized : normalized.slice(0, -1);
+  }
   const colon = target.indexOf(':');
   const remote = target.slice(0, colon);
-  if (colon < 0 || !validRemoteName(remote)) throw new Error('Use an absolute local path or a configured remote path.');
+  if (colon < 0 || !validRemoteName(remote, !platform || platform === 'win32')
+    || (isWindowsDrivePath(target) && !hasRemote(remote))) {
+    throw new Error('Use an absolute path on the daemon host or a configured remote path.');
+  }
   return remoteFs(remote, target.slice(colon + 1));
 }
 
@@ -101,8 +110,9 @@ export function openJobManager(context: JobContext) {
     save(draft: Omit<SyncJob, 'id'> & { id?: string }): SyncJob {
       if (!draft || !['copy', 'sync'].includes(draft.mode) || typeof draft.name !== 'string' || !draft.name.trim()) throw new Error('Invalid sync job.');
       if (draft.id !== undefined) jobFor(draft.id);
-      const source = normalizeTarget(draft.source);
-      const destination = normalizeTarget(draft.destination);
+      const platform = context.platform();
+      const source = normalizeTarget(draft.source, platform, context.hasRemote);
+      const destination = normalizeTarget(draft.destination, platform, context.hasRemote);
       if (source === destination) throw new Error('The source and destination are the same.');
       const job = { ...draft, id: draft.id ?? randomUUID(), source, destination };
       context.save([...context.jobs().filter(({ id }) => id !== job.id), job]);
@@ -116,10 +126,11 @@ export function openJobManager(context: JobContext) {
       const job = jobFor(id);
       if (!job.enabled) throw new Error('This sync job is disabled.');
       if (options?.dryRun !== undefined && typeof options.dryRun !== 'boolean') throw new Error('Invalid dry-run value.');
-      const srcFs = normalizeTarget(job.source);
-      const dstFs = normalizeTarget(job.destination);
-      if (srcFs === dstFs) throw new Error('The source and destination are the same.');
       const rc = context.client();
+      const platform = context.platform();
+      const srcFs = normalizeTarget(job.source, platform, context.hasRemote);
+      const dstFs = normalizeTarget(job.destination, platform, context.hasRemote);
+      if (srcFs === dstFs) throw new Error('The source and destination are the same.');
       const dryRun = options?.dryRun ?? job.dryRunDefault;
       if (starting.has(id) || [...active].some((entry) => entry.run.jobId === id && entry.client === rc)) {
         throw new Error('This sync job is already running.');

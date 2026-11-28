@@ -123,7 +123,7 @@ export function Dashboard(props: PageProps) {
         </section>
       </div>
       <Show when={drawer() === 'mount'}><MountDrawer remotes={remotes()} cache={props.store.settings().daemon.defaultVfsCacheMode}
-        connected={connected()} close={() => setDrawer(undefined)} /></Show>
+        daemon={props.store.snapshot()?.daemon} close={() => setDrawer(undefined)} /></Show>
       <Show when={drawer() === 'remote'}><RemoteDrawer store={props.store} close={() => setDrawer(undefined)} /></Show>
     </>
   );

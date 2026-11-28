@@ -5,7 +5,7 @@ import { RcloneClient } from './rcloneClient';
 
 const secret = () => crypto.randomUUID();
 const fixture = (dump: Record<string, Record<string, string>>, responses: Record<string, unknown>[] = []) => {
-  const daemon = { executeId: 'rclone-instance', configPath: '/fixture/rclone.conf', connected: true };
+  const daemon = { executeId: 'rclone-instance', configPath: '/fixture/rclone.conf', connected: true, hostPlatform: 'linux' };
   const fetch = vi.fn<typeof globalThis.fetch>().mockImplementation(async (input, options) => {
     switch (new URL(String(input)).pathname) {
       case '/job/list': return Response.json({ jobids: [], executeId: daemon.executeId });
@@ -45,7 +45,8 @@ const fixture = (dump: Record<string, Record<string, string>>, responses: Record
   vi.stubGlobal('fetch', fetch);
   const client = new RcloneClient('http://localhost:5572');
   const token = vi.fn(() => secret());
-  return { fetch, daemon, token, service: openRemotes({ client: () => client, isCurrentClient: () => daemon.connected }, { token }) };
+  const platform = () => daemon.hostPlatform;
+  return { fetch, daemon, token, service: openRemotes({ client: () => client, isCurrentClient: () => daemon.connected, platform }, { token }) };
 };
 
 const crypt = (targetRemote: string): CryptDraft => ({
@@ -57,11 +58,11 @@ afterEach(() => vi.unstubAllGlobals());
 
 describe('remote names and catalog', () => {
   it.each(['-remote', 'a:b', 'a/b', 'a\\b', '', ' remote', 'remote ', 'remote\n', 'drive,token=secret'])('rejects %j', (name) => {
-    expect(() => requireRemoteName(name)).toThrow('Invalid rclone remote name');
+    expect(() => requireRemoteName(name, false)).toThrow('Invalid rclone remote name');
   });
 
   it('accepts valid Unicode names and generates random secrets by bit size', () => {
-    expect(() => requireRemoteName('Résumés 2026-a')).not.toThrow();
+    expect(() => requireRemoteName('Résumés 2026-a', false)).not.toThrow();
     expect(generateSecret(128)).toMatch(/^[0-9a-f]{32}$/);
     expect(generateSecret()).not.toBe(generateSecret());
     expect(() => generateSecret(9)).toThrow();
@@ -226,6 +227,13 @@ describe('configuration continuation', () => {
 });
 
 describe('crypt service', () => {
+  it('uses the Windows daemon’s naming and drive path rules', async () => {
+    const { service, daemon } = fixture({ inner: { type: 'crypt', remote: 'C:\\vault' } });
+    daemon.hostPlatform = 'win32';
+    await expect(service.createRemote({ name: 'c', type: 'drive', parameters: {} })).rejects.toThrow('Invalid rclone remote name');
+    await expect(service.createCryptRemote(crypt('inner'))).resolves.toEqual({ state: 'complete' });
+  });
+
   it('writes named crypt options and requests rclone obscuring', async () => {
     const { service, fetch } = fixture({ drive: { type: 'drive' } });
     const draft = crypt('drive');

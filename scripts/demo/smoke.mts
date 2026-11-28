@@ -40,6 +40,9 @@ export async function smoke(): Promise<string[]> {
     await verifyUi(page, abort, app.daemon);
     const verified = await page.eval<boolean>(`(async () => {
       const api = window.api;
+      const blockedReveal = await api.revealMount(${JSON.stringify(VAULT_MOUNT)})
+        .then(() => false, (error) => error.message.includes('rclone host'));
+      if (!blockedReveal) return false;
       const badOverride = await api.updateDaemon({ binaryPath: ${JSON.stringify(import.meta.dirname)} })
         .then(() => false, (error) => error.message.includes('executable rclone binary'));
       if (!badOverride || (await api.initialize()).settings.daemon.binaryPath) return false;
@@ -156,7 +159,15 @@ async function verifyUi(page: Cdp, abort: () => string | null, daemon: {
 
   await openPage(page, 'Mounts', abort);
   const archive = '[data-mount="archive-bucket"]';
+  const personalVault = '[data-mount="personal-vault"]';
+  await contains('Path on', personalVault);
+  if (await page.eval(`[...document.querySelectorAll('${personalVault} button')].some((button) => button.textContent === 'Open folder')`)) {
+    throw new Error('Attached mount exposed the local Open folder action.');
+  }
   await click('Edit', archive);
+  if (await page.eval(`!!document.querySelector('dialog [aria-label="Choose folder"]')`)) {
+    throw new Error('Attached mount profile exposed the local folder picker.');
+  }
   await input('dialog input', 'Unsaved archive');
   await click('Close drawer', 'dialog[open]');
   await contains('Archive Bucket', archive);

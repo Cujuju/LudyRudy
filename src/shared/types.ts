@@ -11,6 +11,7 @@ export interface DaemonStatus {
   configEncrypted: boolean | null;
   attached: boolean;
   mode: 'attached' | 'managed';
+  hostPlatform: string | null;
   error: string | null;
 }
 

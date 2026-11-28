@@ -77,7 +77,7 @@ export function Remotes(props: PageProps) {
             else close();
           }} />;
           case 'mount': return <MountDrawer remote={current.remote} remotes={remotes()} cache={props.store.settings().daemon.defaultVfsCacheMode}
-            connected={connected()} close={close} />;
+            daemon={props.store.snapshot()?.daemon} close={close} />;
         }
       }}</Show>
     </>

@@ -86,6 +86,7 @@ export function openDaemon(hooks: Hooks = {}) {
   let snapshot: AppSnapshot = {
     daemon: {
       state: 'stopped', mode: configuredEndpoint() === undefined ? 'managed' : 'attached',
+      hostPlatform: configuredEndpoint() === undefined ? process.platform : null,
       endpoint: null, pid: null, version: null, ...binary,
       configPath: null, configEncrypted: null, attached: false, error: null,
     },
@@ -121,7 +122,7 @@ export function openDaemon(hooks: Hooks = {}) {
 
   function disconnected(state: 'stopped' | 'error', error: string | null): void {
     snapshot = { ...snapshot, remotes: [], mounts: [], stats: null, dataError: null };
-    status({ state, attached: false, pid: null, error });
+    status({ state, attached: false, pid: null, error, hostPlatform: snapshot.daemon.mode === 'managed' ? process.platform : null });
     if (error) append({ ts: new Date().toISOString(), level: 'error', message: error, source: 'app' });
   }
 
@@ -130,8 +131,10 @@ export function openDaemon(hooks: Hooks = {}) {
     try {
       const { version, os } = await client.call('core/version');
       if (typeof version !== 'string' || !version) throw new Error('rclone returned no version.');
+      const hostPlatform = snapshot.daemon.mode === 'managed' ? process.platform
+        : os === 'windows' ? 'win32' : typeof os === 'string' && /^[a-z][a-z0-9]*$/.test(os) ? os : null;
       const [remotes, mounts, stats, pid, paths] = await Promise.allSettled([
-        client.remoteInventory(os === 'windows'), client.mounts(os === 'windows'), client.stats(os === 'windows'),
+        client.remoteInventory(hostPlatform === 'win32'), client.mounts(hostPlatform === 'win32'), client.stats(hostPlatform === 'win32'),
         client.call('core/pid'), client.call('config/paths'),
       ]);
       if (client !== rc) return snapshot;
@@ -140,8 +143,8 @@ export function openDaemon(hooks: Hooks = {}) {
       const profiles = getSettings().mounts;
       const wasRunning = snapshot.daemon.state === 'running';
       const attached = snapshot.daemon.mode === 'attached';
-      const process = managed;
-      const firstReady = process !== undefined && !process.ready;
+      const child = managed;
+      const firstReady = child !== undefined && !child.ready;
       if (!wasRunning) append({
         ts: new Date().toISOString(), level: 'info', source: 'app',
         message: attached ? 'Attached to rclone.' : firstReady ? 'Started managed rclone.' : 'Reconnected to managed rclone.',
@@ -160,12 +163,12 @@ export function openDaemon(hooks: Hooks = {}) {
         stats: stats.status === 'fulfilled' ? stats.value : snapshot.stats,
       };
       status({
-        state: 'running', version: /^v[\w.+-]+$/.test(version) ? version : null, attached, error: null,
+        state: 'running', version: /^v[\w.+-]+$/.test(version) ? version : null, attached, hostPlatform, error: null,
         pid: pid.status === 'fulfilled' ? pid.value.pid : managed?.child.pid ?? null,
         configPath: paths.status === 'fulfilled' ? paths.value.config : snapshot.daemon.configPath,
       });
       if (firstReady) {
-        process.ready = true;
+        child.ready = true;
         hooks.ready?.();
       }
     } catch (error) {
@@ -240,6 +243,7 @@ export function openDaemon(hooks: Hooks = {}) {
     };
     if (endpoint === undefined) probe(binary.binaryPath);
     status({ state: 'starting', mode: endpoint === undefined ? 'managed' : 'attached', ...binary, error: null,
+      hostPlatform: endpoint === undefined ? process.platform : null,
       configEncrypted: null, configPath: config.configPath || null });
     try {
       if (endpoint !== undefined) {
@@ -317,7 +321,8 @@ export function openDaemon(hooks: Hooks = {}) {
       return rc;
     },
     forRemote(name: unknown): RcloneClient {
-      if (!validRemoteName(name) || !snapshot.remotes.some((remote) => remote.name === name)) throw new Error('Unknown rclone remote.');
+      if (!validRemoteName(name, snapshot.daemon.hostPlatform === 'win32')
+        || !snapshot.remotes.some((remote) => remote.name === name)) throw new Error('Unknown rclone remote.');
       return this.client();
     },
     refresh() {

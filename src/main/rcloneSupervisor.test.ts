@@ -39,10 +39,10 @@ class FakeChild extends EventEmitter {
   }
 }
 
-function fixture(quit: () => void = () => {}) {
+function fixture(quit: () => void = () => {}, os?: string) {
   const fetch = vi.fn<typeof globalThis.fetch>().mockImplementation(async (input) => {
     switch (new URL(String(input)).pathname) {
-      case '/core/version': return Response.json({ version: 'v1.76.0' });
+      case '/core/version': return Response.json({ version: 'v1.76.0', os });
       case '/core/pid': return Response.json({ pid: 12 });
       case '/config/listremotes': return Response.json({ remotes: ['drive'] });
       case '/config/dump': return Response.json({ drive: { type: 'drive' } });
@@ -76,16 +76,30 @@ describe('RcloneSupervisor', () => {
       mocks.argument.mockImplementation((name) => name === '--rclone-endpoint' ? 'http://localhost:4321' : 'app:auth');
       mocks.settings.mockReturnValue(normalizeSettings({ daemon: { endpoint: 'http://localhost:1234' } }));
     } else mocks.settings.mockReturnValue(normalizeSettings({ daemon: { endpoint: 'http://localhost:4321' } }));
-    const fetch = fixture();
+    const fetch = fixture(undefined, 'windows');
     const daemon = openDaemon();
     await daemon.start();
-    expect(daemon.current().daemon).toMatchObject({ mode: 'attached', state: 'running', attached: true, endpoint: 'http://localhost:4321/' });
+    expect(daemon.current().daemon).toMatchObject({ mode: 'attached', state: 'running', attached: true, endpoint: 'http://localhost:4321/', hostPlatform: 'win32' });
     await daemon.restart();
     await daemon.stop();
-    expect(daemon.current().daemon).toMatchObject({ state: 'stopped', attached: false, pid: null });
+    expect(daemon.current().daemon).toMatchObject({ state: 'stopped', attached: false, pid: null, hostPlatform: null });
     expect(mocks.spawn).not.toHaveBeenCalled();
     expect(mocks.localVersion).not.toHaveBeenCalled();
     expect(fetch.mock.calls.some(([url]) => /quit|unmount/.test(String(url)))).toBe(false);
+  });
+
+  it('clears an attached host platform when its connection fails and detects the next host', async () => {
+    mocks.settings.mockReturnValue(normalizeSettings({ daemon: { endpoint: 'http://localhost:4321' } }));
+    const daemon = openDaemon();
+    fixture(undefined, 'windows');
+    await daemon.start();
+    expect(daemon.current().daemon.hostPlatform).toBe('win32');
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('Offline')));
+    await daemon.refresh();
+    expect(daemon.current().daemon.hostPlatform).toBeNull();
+    fixture(undefined, 'linux');
+    await daemon.restart();
+    expect(daemon.current().daemon.hostPlatform).toBe('linux');
   });
 
   it('changes remote revision for a config-only edit without exposing the edited value', async () => {

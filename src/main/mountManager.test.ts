@@ -11,7 +11,7 @@ const draft: MountProfile = {
   extraFlags: ['-o', 'ro'], mountType: 'cmount',
 };
 
-function fixture(initial: MountProfile[], managed = false) {
+function fixture(initial: MountProfile[], managed = false, platform: string = process.platform) {
   const active = new Map<string, { Fs: string; MountPoint: string }>();
   const fetch = vi.fn<typeof globalThis.fetch>().mockImplementation(async (input, opts) => {
     const args = JSON.parse(String(opts?.body));
@@ -34,7 +34,7 @@ function fixture(initial: MountProfile[], managed = false) {
   const rc = new RcloneClient('http://localhost:5572');
   const mounts = openMountManager({
     client: () => rc, profiles: () => profiles, save: (next) => { profiles = next; },
-    managed: () => managed, notify, reveal, defaults: () => 'full',
+    managed: () => managed, platform: () => platform, notify, reveal, defaults: () => 'full',
   });
   return { mounts, fetch, notify, reveal, active };
 }
@@ -92,17 +92,48 @@ describe('MountManager', () => {
   });
 
   it('creates and updates profiles, and restricts paths used to reveal a mount', async () => {
-    const { mounts, reveal } = fixture([]);
+    const { mounts, reveal, active } = fixture([], true);
     const { id: _, ...withoutId } = draft;
     expect(() => mounts.save({ ...withoutId, mountPoint: 'relative' })).toThrow('absolute mount point');
     const profile = mounts.save({ ...withoutId, vfsCacheMode: undefined });
     expect(profile.vfsCacheMode).toBe('full');
     expect(mounts.save({ ...profile, name: 'New name' }).name).toBe('New name');
     await expect(mounts.revealMount(resolve('out/other'))).rejects.toThrow('Unknown mount point');
+    await expect(mounts.revealMount(profile.mountPoint)).rejects.toThrow('Unknown mount point');
+    active.set(profile.mountPoint, { Fs: 'vault:subdir', MountPoint: profile.mountPoint });
     await mounts.revealMount(profile.mountPoint);
     expect(reveal).toHaveBeenCalledWith(profile.mountPoint);
     mounts.delete(profile.id);
     expect(mounts.list()).toEqual([]);
+  });
+
+  it('passes an attached Windows mount point through the daemon without touching the local shell', async () => {
+    const { mounts, reveal, fetch } = fixture([], false, 'win32');
+    const profile = mounts.save({ ...draft, id: undefined, mountPoint: 'x:' });
+    expect(profile.mountPoint).toBe('X:\\');
+    await expect(mounts.mountProfile(profile.id)).resolves.toBe('X:\\');
+    expect(JSON.parse(String(fetch.mock.lastCall?.[1]?.body))).toMatchObject({ mountPoint: 'X:\\' });
+    await expect(mounts.revealMount(profile.mountPoint)).rejects.toThrow('rclone host');
+    expect(reveal).not.toHaveBeenCalled();
+  });
+
+  it.each(['C:/foo/..', '//server/share', '//server/share/'])('rejects Windows filesystem roots after normalization (%s)', (mountPoint) => {
+    const { mounts } = fixture([], false, 'win32');
+    expect(() => mounts.save({ ...draft, id: undefined, mountPoint })).toThrow('filesystem root');
+  });
+
+  it('saves a Windows profile alongside an existing POSIX profile', () => {
+    const { mounts } = fixture([{ ...draft, mountPoint: '/mnt/vault' }], false, 'win32');
+    expect(mounts.save({ ...draft, id: undefined, mountPoint: 'X:' }).mountPoint).toBe('X:\\');
+    expect(mounts.list()).toHaveLength(2);
+  });
+
+  it('blocks local reveal even when an attached mount point matches an existing desktop directory', async () => {
+    const path = process.cwd();
+    const { mounts, fetch, reveal } = fixture([{ ...draft, mountPoint: path }]);
+    await expect(mounts.revealMount(path)).rejects.toThrow('rclone host');
+    expect(fetch).not.toHaveBeenCalled();
+    expect(reveal).not.toHaveBeenCalled();
   });
 
   it('validates remote existence and reports mount failures', async () => {

@@ -7,7 +7,7 @@ const snapshot: AppSnapshot = {
   remoteRevision: 0,
   daemon: {
     state: 'running', endpoint: null, pid: null, version: 'v1.73.0', binaryPath: null,
-    binarySource: 'bundled', configPath: null, configEncrypted: null, attached: false, mode: 'managed', error: null,
+    binarySource: 'bundled', configPath: null, configEncrypted: null, attached: false, mode: 'managed', hostPlatform: 'win32', error: null,
   },
   prereqs: {
     platform: 'win32', rcloneInstalled: true, rcloneVersion: null, rclonePath: null,
