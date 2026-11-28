@@ -121,9 +121,12 @@ export function DaemonSettings(props: { store: AppStore }) {
       <section class="panel">
         <SectionHeader title="Daemon settings" />
         <div class="settings-body">
-          <div class="setting-row"><div><strong>Local rclone binary</strong><p class="path secondary selectable">{snapshot()?.prereqs.rclonePath ?? 'Binary not found'}</p></div>
-            <div class="actions"><span class="chip">{daemon()?.binarySource ?? 'Unknown'}</span>
-              <Show when={snapshot()?.prereqs.rcloneVersion}><span class="chip">{snapshot()?.prereqs.rcloneVersion}</span></Show></div></div>
+          <div class="setting-row"><div><strong>Configured rclone binary</strong><p class="path secondary selectable">{snapshot()?.prereqs.rclonePath ?? 'Binary not found'}</p></div>
+            <Show when={snapshot()?.prereqs.rcloneVersion}><span class="chip">{snapshot()?.prereqs.rcloneVersion}</span></Show></div>
+          <Show when={daemon()?.state === 'running' && daemon()?.mode === 'managed'}>
+            <div class="setting-row"><div><strong>Running rclone binary</strong><p class="path secondary selectable">{daemon()?.binaryPath}</p></div>
+              <div class="actions"><span class="chip">{daemon()?.binarySource}</span><Show when={daemon()?.version}><span class="chip">{daemon()?.version}</span></Show></div></div>
+          </Show>
           <LocationSetting label="Custom binary path" value={config().binaryPath} placeholder="Use the bundled or installed binary"
             chooseLabel="Choose binary" choose={window.api.pickRcloneBinary} save={(binaryPath) => change({ binaryPath })} />
           <Toggle label="Auto-start daemon" checked={config().autoStart} disabled={action.pending()} onChange={(autoStart) => void action.run(() => change({ autoStart }))} />

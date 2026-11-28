@@ -34,7 +34,11 @@ function executable(file: string): boolean {
 
 export function resolveRclone(override: string): { binaryPath: DaemonStatus['binaryPath']; binarySource: DaemonStatus['binarySource'] } {
   const name = process.platform === 'win32' ? 'rclone.exe' : 'rclone';
-  if (isAbsolute(override) && executable(override)) return { binaryPath: override, binarySource: 'override' };
+  if (override) {
+    return isAbsolute(override) && executable(override)
+      ? { binaryPath: override, binarySource: 'override' }
+      : { binaryPath: null, binarySource: 'missing' };
+  }
   const bin = app.isPackaged ? 'bin' : join('bin', `${process.platform}-${process.arch}`);
   const bundled = resource(join(bin, name));
   if (executable(bundled)) return { binaryPath: bundled, binarySource: 'bundled' };

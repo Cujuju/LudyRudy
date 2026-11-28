@@ -16,6 +16,17 @@ describe('RcloneClient', () => {
     expect(new Headers(opts?.headers).get('Authorization')).toBe(`Basic ${Buffer.from(auth).toString('base64')}`);
   });
 
+  it.each(['http://192.0.2.1', 'http://127.example.test'])('rejects authenticated plaintext at %s', (endpoint) => {
+    const credentials = ['review', crypto.randomUUID()].join(':');
+    expect(() => new RcloneClient(endpoint, credentials)).toThrow('Use HTTPS');
+    expect(() => new RcloneClient(endpoint)).not.toThrow();
+  });
+
+  it.each(['http://localhost', 'http://127.0.0.1', 'http://[::1]', 'https://daemon.example.test'])('accepts authenticated endpoint %s', (endpoint) => {
+    const credentials = ['review', crypto.randomUUID()].join(':');
+    expect(() => new RcloneClient(endpoint, credentials)).not.toThrow();
+  });
+
   it('keeps secret config keys in the main process and identifies crypt target and defaults', async () => {
     vi.stubGlobal('fetch', vi.fn<typeof globalThis.fetch>()
       .mockResolvedValueOnce(Response.json({ remotes: ['vault'] }))
