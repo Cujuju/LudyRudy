@@ -2,8 +2,8 @@ import { createUniqueId, For, Show, untrack } from 'solid-js';
 import { createStore } from 'solid-js/store';
 import { FolderOpen } from 'lucide-solid';
 import type { SyncJob } from '@shared/types';
-import { useAction } from '../lib/actions';
-import { blurActiveElement, Drawer, Feedback, FormActions, Segmented, sentenceCase, Toggle } from './ui';
+import { useNativePicker } from '../lib/actions';
+import { Drawer, Feedback, FormActions, Segmented, sentenceCase, Toggle } from './ui';
 
 const JOB_MODES = ['copy', 'sync'] as const;
 const JOB_PATHS = ['source', 'destination'] as const;
@@ -13,16 +13,11 @@ export function JobDrawer(props: { job?: SyncJob; attached: boolean; close: () =
   const [draft, setDraft] = createStore<JobDraft>(untrack(() => props.job ? { ...props.job } : {
     name: '', source: '', destination: '', excludes: [], mode: 'copy', enabled: true, dryRunDefault: true,
   }));
-  const action = useAction();
-  const picker = useAction();
+  const action = useNativePicker();
   const pathId = createUniqueId();
 
   function choose(field: 'source' | 'destination') {
-    void picker.run(async () => {
-      blurActiveElement();
-      const folder = await window.api.pickDirectory();
-      if (folder) setDraft(field, folder);
-    });
+    void action.choose(window.api.pickDirectory, (folder) => { setDraft(field, folder); });
   }
 
   async function save() {
@@ -50,7 +45,7 @@ export function JobDrawer(props: { job?: SyncJob; attached: boolean; close: () =
                   <input id={id} class="path" aria-describedby={`${id}-hint`} required value={draft[field]}
                     onInput={(event) => setDraft(field, event.currentTarget.value)} />
                   <button type="button" class="button input-addon" aria-label={`Choose ${field} folder`}
-                    disabled={props.attached || picker.pending()} onClick={() => choose(field)}><FolderOpen size={14} aria-hidden="true" /> Browse</button>
+                    disabled={props.attached} onClick={() => choose(field)}><FolderOpen size={14} aria-hidden="true" /> Browse</button>
                 </div>
                 <small class="field-hint" id={`${id}-hint`}>Use remote:folder or an absolute path.</small>
               </div>
@@ -65,9 +60,8 @@ export function JobDrawer(props: { job?: SyncJob; attached: boolean; close: () =
           <Toggle label="Enabled" checked={draft.enabled} onChange={(value) => setDraft('enabled', value)} />
           <Toggle label="Dry run by default" checked={draft.dryRunDefault} onChange={(value) => setDraft('dryRunDefault', value)} />
         </fieldset>
-        <Feedback action={picker} />
         <Feedback action={action} />
-        <FormActions label="Save job" close={props.close} busy={action.pending()} disabled={picker.pending()} />
+        <FormActions label="Save job" close={props.close} busy={action.pending()} />
       </form>
     </Drawer>
   );

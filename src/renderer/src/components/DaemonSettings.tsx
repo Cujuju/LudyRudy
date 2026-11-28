@@ -3,8 +3,8 @@ import { FolderOpen, X } from 'lucide-solid';
 import { VFS_CACHE_MODES } from '@shared/types';
 import type { AppSettings } from '@shared/settings';
 import type { AppStore } from '../store';
-import { errorMessage, useAction } from '../lib/actions';
-import { blurActiveElement, Confirm, Feedback, SectionHeader, SecretInput, Segmented, sentenceCase, Toggle } from './ui';
+import { errorMessage, useAction, useNativePicker } from '../lib/actions';
+import { Confirm, Feedback, SectionHeader, SecretInput, Segmented, sentenceCase, Toggle } from './ui';
 
 function LocationSetting(props: {
   label: string; value: string; placeholder?: string; save: (value: string) => Promise<unknown>;
@@ -12,7 +12,7 @@ function LocationSetting(props: {
 }) {
   const id = createUniqueId();
   const [draft, setDraft] = createSignal<string>();
-  const action = useAction();
+  const action = useNativePicker();
   const value = () => draft() ?? props.value;
   const dirty = () => value() !== props.value;
   async function save(path: string) {
@@ -29,14 +29,10 @@ function LocationSetting(props: {
         </Show>
         <Show when={dirty()}><button type="submit" class="button primary input-addon" disabled={action.pending()}>Save</button></Show>
         <Show when={props.choose}>{(choose) => (
-          <button type="button" class="button input-addon" aria-label={props.chooseLabel} disabled={action.pending()} onClick={() => void action.run(async () => {
-            blurActiveElement();
-            const location = await untrack(() => choose()());
-            if (location) {
-              setDraft(location);
-              await untrack(() => props.save(location));
-              setDraft(undefined);
-            }
+          <button type="button" class="button input-addon" aria-label={props.chooseLabel} disabled={action.pending()} onClick={() => void action.choose(untrack(choose), async (location) => {
+            setDraft(location);
+            await untrack(() => props.save(location));
+            setDraft(undefined);
           })}><FolderOpen size={14} aria-hidden="true" /> Browse</button>
         )}</Show>
       </div>

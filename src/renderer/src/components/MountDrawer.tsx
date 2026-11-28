@@ -3,10 +3,10 @@ import { createStore, produce, unwrap } from 'solid-js/store';
 import { FolderOpen } from 'lucide-solid';
 import { CACHE_AGE_PRESETS, CACHE_SIZE_PRESETS, MOUNT_OPTION_CATALOG, type MountOption, type MountOptionMap, type MountOptionValue } from '@shared/mountOptions';
 import { VFS_CACHE_MODES, type MountProfile, type RemoteSummary } from '@shared/types';
-import { useAction } from '../lib/actions';
+import { useAction, useNativePicker } from '../lib/actions';
 import { remoteOptions } from '../lib/remotes';
 import { ProviderIcon } from './ProviderIcon';
-import { blurActiveElement, Drawer, Feedback, FormActions, Select, Segmented, Toggle } from './ui';
+import { Drawer, Feedback, FormActions, Select, Segmented, Toggle } from './ui';
 
 type MountDraft = Parameters<typeof window.api.saveMountProfile>[0];
 const OPTION_GROUP_NAMES = { mount: 'Mount', vfs: 'VFS' };
@@ -122,12 +122,10 @@ export function MountDrawer(props: {
   const [flags, setFlags] = createSignal(untrack(() => draft.extraFlags.join('\n')));
   const showRawFlags = untrack(() => draft.extraFlags.length > 0);
   const [types, setTypes] = createSignal<string[]>([]);
-  const action = useAction();
+  const action = useNativePicker();
   const selectedRemote = () => props.remotes.find(({ name }) => name === draft.remote);
   const lookup = useAction();
-  const picker = useAction();
-  const busy = () => action.pending() || picker.pending();
-  const cannotSave = () => !draft.remote || lookup.pending() || picker.pending();
+  const cannotSave = () => !draft.remote || lookup.pending();
   const remotes = createMemo(() => {
     const options = remoteOptions(props.remotes);
     if (draft.remote && !options.some(({ value }) => value === draft.remote)) {
@@ -162,7 +160,7 @@ export function MountDrawer(props: {
 
   return (
     <Drawer title={props.profile ? 'Edit mount profile' : 'New mount profile'} description="Connect a remote folder to a local drive."
-      busy={busy()} close={props.close}>
+      busy={action.pending()} close={props.close}>
       <form class="form-stack" onSubmit={(event) => { event.preventDefault(); void save(); }}>
         <fieldset disabled={action.pending()}>
           <label class="field">Profile name<input required value={draft.name} onInput={(event) => setDraft('name', event.currentTarget.value)} /></label>
@@ -179,11 +177,7 @@ export function MountDrawer(props: {
             <div class="input-group">
               <input id={mountPointId} class="path" placeholder={mountPointHint} required value={draft.mountPoint}
                 onInput={(event) => setDraft('mountPoint', event.currentTarget.value)} />
-              <button type="button" class="button input-addon" aria-label="Choose folder" disabled={picker.pending()} onClick={() => void picker.run(async () => {
-                blurActiveElement();
-                const path = await window.api.pickDirectory();
-                if (path) setDraft('mountPoint', path);
-              })}><FolderOpen size={14} aria-hidden="true" /> Browse</button>
+              <button type="button" class="button input-addon" aria-label="Choose folder" onClick={() => void action.choose(window.api.pickDirectory, (path) => { setDraft('mountPoint', path); })}><FolderOpen size={14} aria-hidden="true" /> Browse</button>
             </div>
           </div>
           <div class="setting-row"><span>VFS cache mode</span>
@@ -206,7 +200,6 @@ export function MountDrawer(props: {
           </details>
         </fieldset>
         <Feedback action={lookup} />
-        <Feedback action={picker} />
         <Feedback action={action} />
         <FormActions label="Save profile" busy={action.pending()} disabled={cannotSave()} close={props.close} />
       </form>
