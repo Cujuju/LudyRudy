@@ -95,6 +95,7 @@ export function App() {
           <div class="page-content" ref={content}>
             <Show when={store.error()}>{(message) => <p class="banner error" role="alert">{message()}</p>}</Show>
             <Show when={store.ready()} fallback={<Show when={!store.error()}><p role="status">Loading LudyRudy…</p></Show>}>
+              <Show when={store.settingsProblem()}>{(message) => <p class="banner error" role="alert">{message()}</p>}</Show>
               <Show when={store.snapshot()?.dataError}>{(message) => <p class="banner" role="status">{message()}</p>}</Show>
               <Dynamic component={PAGES[page()]} store={store} navigate={navigate} />
             </Show>

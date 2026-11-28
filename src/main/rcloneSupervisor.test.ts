@@ -152,6 +152,24 @@ describe('RcloneSupervisor', () => {
     await daemon.stop();
   });
 
+  it('leaves the running child alone if a queued stop precondition fails', async () => {
+    const child = new FakeChild();
+    mocks.spawn.mockReturnValue(child);
+    const fetch = fixture(() => child.close());
+    const daemon = openDaemon();
+    const start = daemon.start();
+    const action = vi.fn(async () => undefined);
+    const transition = daemon.whileStopped(action, (running) => {
+      if (running) throw new Error('Invalid pending operation');
+    });
+    await start;
+    await expect(transition).rejects.toThrow('Invalid pending operation');
+    expect(daemon.current().daemon.state).toBe('running');
+    expect(action).not.toHaveBeenCalled();
+    expect(fetch.mock.calls.some(([url]) => /quit|unmount/.test(String(url)))).toBe(false);
+    await daemon.stop();
+  });
+
   it('falls back to SIGTERM when graceful quit does not exit', async () => {
     const child = new FakeChild();
     mocks.spawn.mockReturnValue(child);

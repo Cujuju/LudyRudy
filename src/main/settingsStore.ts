@@ -27,22 +27,33 @@ function readOptional(file: string): Buffer | null {
 }
 
 let current: AppSettings | undefined;
+let settingsProblem: string | null = null;
 const listeners = new Set<(value: AppSettings) => void>();
 
 export function getSettings(): AppSettings {
   if (current) return current;
   try {
     const file = readOptional(profileFile('settings.json'));
-    current = normalizeSettings(file ? JSON.parse(file.toString('utf8')) : undefined);
+    const stored: unknown = file ? JSON.parse(file.toString('utf8')) : {};
+    if (!stored || typeof stored !== 'object' || Array.isArray(stored)) throw new Error('Expected a settings object.');
+    current = normalizeSettings(stored);
   } catch (error) {
     console.error('[settings] Could not read settings.json:', error);
+    settingsProblem = 'Could not read settings.json. Repair the file in the app data folder and restart LudyRudy to save changes.';
     current = normalizeSettings(undefined);
   }
   return current;
 }
 
+export function getSettingsProblem(): string | null {
+  getSettings();
+  return settingsProblem;
+}
+
 export function updateSettings(patch: Partial<AppSettings>): AppSettings {
-  const next = normalizeSettings({ ...getSettings(), ...patch });
+  const previous = getSettings();
+  if (settingsProblem) throw new Error(settingsProblem);
+  const next = normalizeSettings({ ...previous, ...patch });
   writeFileAtomic(profileFile('settings.json'), JSON.stringify(next, null, 2));
   current = next;
   for (const listener of listeners) listener(next);
@@ -106,7 +117,7 @@ export function saveConfigPassword(path: string, password: string | null): Promi
   return withSecrets(() => storeSecret(secretFile(path), password));
 }
 
-export function replaceConfigWithPassword(path: string, stage: string, password: string | null): Promise<void> {
+export function replaceConfigWithPassword(path: string, stage: string, password: string | null, assertUnchanged: () => void): Promise<void> {
   return withSecrets(async () => {
     const file = secretFile(path);
     const pendingFile = file + '.pending';
@@ -115,6 +126,7 @@ export function replaceConfigWithPassword(path: string, stage: string, password:
     // A staged credential survives interruption between the config and key-store writes.
     writeFileAtomic(pendingFile, await encrypt(JSON.stringify({ password, configDigest })));
     try {
+      assertUnchanged();
       renameSync(stage, path);
     } catch (error) {
       rmSync(pendingFile, { force: true });

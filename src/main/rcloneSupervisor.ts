@@ -310,8 +310,9 @@ export function openDaemon(hooks: Hooks = {}) {
     start: () => serialize(start),
     stop: () => serialize(stop),
     restart: () => serialize(async () => { await stop(); await start(); }),
-    whileStopped: (action: () => Promise<void>) => serialize(async () => {
+    whileStopped: (action: () => Promise<void>, beforeStop?: (running: boolean) => void) => serialize(async () => {
       const running = !!managed;
+      beforeStop?.(running);
       await stop();
       try {
         await action();

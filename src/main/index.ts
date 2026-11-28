@@ -11,7 +11,7 @@ import { supportsLaunchAtLogin } from './paths';
 import { openAuth } from './rcloneAuth';
 import { errorMessage, openDaemon } from './rcloneSupervisor';
 import { openRemotes } from './remoteService';
-import { getSettings, onSettingsChange, updateSettings } from './settingsStore';
+import { getSettings, getSettingsProblem, onSettingsChange, updateSettings } from './settingsStore';
 import { createTray } from './tray';
 import { createMainWindow, isQuitting, mainWindow, markQuitting, showMainWindow, syncWindowBackground } from './window';
 
@@ -20,7 +20,7 @@ let lastLoginSettings: string | undefined;
 const LOGIN_MINIMIZED_ARG = '--login-minimized';
 
 function applyLoginSettings(): void {
-  if (!supportsLaunchAtLogin()) return;
+  if (!supportsLaunchAtLogin() || getSettingsProblem()) return;
   const { launchAtLogin, startMinimized } = getSettings().general;
   const signature = JSON.stringify([launchAtLogin, startMinimized]);
   if (lastLoginSettings === signature) return;

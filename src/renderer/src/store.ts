@@ -20,6 +20,7 @@ export function createAppStore() {
   const [browserTarget, setBrowserTarget] = createSignal<{ remote: string; path: string }>();
   const [launchAtLoginSupported, setLaunchAtLoginSupported] = createSignal(false);
   const [maximized, setMaximized] = createSignal(false);
+  const [settingsProblem, setSettingsProblem] = createSignal<string | null>(null);
   const [error, setError] = createSignal('');
   const [ready, setReady] = createSignal(false);
   const [refreshing, setRefreshing] = createSignal(false);
@@ -65,12 +66,14 @@ export function createAppStore() {
       if (!settingsUpdated) setSettings(initial.settings);
       if (!maximizeUpdated) setMaximized(initial.maximized);
       setBuild(initial.build);
+      setSettingsProblem(initial.settingsProblem);
       setLaunchAtLoginSupported(initial.launchAtLoginSupported);
       setReady(true);
     }).catch(reportError);
   });
 
   async function updateGeneral(patch: Partial<AppSettings['general']>): Promise<void> {
+    if (settingsProblem()) return;
     setError('');
     try {
       await api.updateGeneral(patch);
@@ -93,7 +96,7 @@ export function createAppStore() {
   }
 
   return { settings, settingsSection, setSettingsSection, build, snapshot, logs, auth, browserTarget, setBrowserTarget,
-    browserCache, launchAtLoginSupported, maximized, ready, error, refreshing, updateGeneral, refresh };
+    browserCache, launchAtLoginSupported, maximized, ready, settingsProblem, error, refreshing, updateGeneral, refresh };
 }
 
 export type AppStore = ReturnType<typeof createAppStore>;
