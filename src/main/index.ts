@@ -60,7 +60,7 @@ else {
       reveal: (path) => shell.openPath(path), notify,
     });
     const jobs = openJobManager({
-      client: daemon.client, jobs: () => getSettings().jobs, save: (jobs) => { updateSettings({ jobs }); },
+      client: daemon.client, isCurrentClient: daemon.isCurrentClient, jobs: () => getSettings().jobs, save: (jobs) => { updateSettings({ jobs }); },
       notify, change: () => publish(),
     });
     const current = () => ({ ...daemon.current(), jobRuns: jobs.runs() });

@@ -290,6 +290,7 @@ export function openDaemon(hooks: Hooks = {}) {
       } };
       if (!rc && !managed && snapshot.daemon.state !== 'starting') status({ ...local, configPath: encrypted === null ? null : path, configEncrypted: encrypted });
     },
+    isCurrentClient: (client: RcloneClient) => rc === client,
     client(): RcloneClient {
       if (!rc || snapshot.daemon.state !== 'running') throw new Error('Connect to rclone first.');
       return rc;

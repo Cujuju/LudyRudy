@@ -7,7 +7,9 @@ import { errorMessage, useAction } from '../lib/actions';
 import { formatBytes, formatDuration, formatSpeed, formatTime } from '../lib/format';
 import type { PageProps } from '../store';
 
-const BANDWIDTH_PRESETS = ['off', '5M', '25M', '100M'] as const;
+const BYTES_PER_MIB = 1024 ** 2;
+const PRESET_RATES = { off: -1, '5M': 5 * BYTES_PER_MIB, '25M': 25 * BYTES_PER_MIB, '100M': 100 * BYTES_PER_MIB };
+const BANDWIDTH_PRESETS = Object.keys(PRESET_RATES) as (keyof typeof PRESET_RATES)[];
 
 function Throughput(props: PageProps) {
   const stats = () => props.store.snapshot()?.stats;
@@ -15,6 +17,15 @@ function Throughput(props: PageProps) {
   const [rate, setRate] = createSignal('');
   const limit = (value: string) => window.api.bandwidthLimit(value);
   const bandwidth = () => stats()?.bwLimit ?? '';
+  const preset = createMemo(() => {
+    const current = stats();
+    if (!current) return undefined;
+    const { bwLimitTx, bwLimitRx } = current;
+    if (bwLimitTx !== undefined && bwLimitRx !== undefined) {
+      return BANDWIDTH_PRESETS.find((key) => PRESET_RATES[key] === bwLimitTx && PRESET_RATES[key] === bwLimitRx);
+    }
+    return BANDWIDTH_PRESETS.find((key) => key === bandwidth() || (key !== 'off' && `${key}i` === bandwidth()));
+  });
   return (
     <div class="telemetry transfer-telemetry">
       <div class="telemetry-metrics">
@@ -27,9 +38,9 @@ function Throughput(props: PageProps) {
       </button>
       <div class="bandwidth-controls">
         <div class="row"><Gauge size={17} /> <strong>Bandwidth limit</strong>
-          <Show when={!BANDWIDTH_PRESETS.some((preset) => preset === bandwidth())}><span class="chip">{bandwidth() || 'Unavailable'}</span></Show>
+          <Show when={!preset()}><span class="chip">{bandwidth() || 'Unavailable'}</span></Show>
         </div>
-        <Segmented label="Bandwidth presets" options={BANDWIDTH_PRESETS} value={bandwidth()} disabled={!stats() || action.pending()}
+        <Segmented label="Bandwidth presets" options={BANDWIDTH_PRESETS} value={preset() ?? ''} disabled={!stats() || action.pending()}
           onChange={(value) => void action.run(() => limit(value))} />
         <form class="input-group" onSubmit={(event) => {
           event.preventDefault();
@@ -53,7 +64,10 @@ function RunBadge(props: { run: SyncJobRun }) {
 function JobRow(props: PageProps & { job: SyncJob; onEdit: () => void }) {
   const action = useAction();
   const latest = () => props.store.snapshot()?.jobRuns.find((run) => run.jobId === props.job.id);
-  const running = () => latest()?.state === 'running' ? latest() : undefined;
+  const running = () => {
+    const run = latest();
+    return run?.finishedAt === null ? run : undefined;
+  };
   const disabled = () => !props.job.enabled || action.pending() || props.store.snapshot()?.daemon.state !== 'running';
   const run = (dryRun: boolean) => window.api.runJob(props.job.id, { dryRun });
   return (
@@ -76,7 +90,7 @@ function JobRow(props: PageProps & { job: SyncJob; onEdit: () => void }) {
               <Confirm label="Run now" question="Run this sync? It can delete files from the destination." disabled={disabled()} action={() => run(false)} />
             </Show>
           </>
-        }>{(item) => <button type="button" class="button" disabled={action.pending()}
+        }>{(item) => <button type="button" class="button" disabled={action.pending() || props.store.snapshot()?.daemon.state !== 'running'}
           onClick={() => void action.run(() => untrack(() => window.api.stopJob(item().rcloneJobId)))}>Stop</button>}</Show>
         <button type="button" class="button quiet" disabled={!!running() || action.pending()} onClick={() => props.onEdit()}>Edit</button>
         <div class="action-danger"><Confirm label="Delete job" question="Delete this saved job?" disabled={!!running() || action.pending()}
@@ -88,17 +102,34 @@ function JobRow(props: PageProps & { job: SyncJob; onEdit: () => void }) {
   );
 }
 
-export function Transfers(props: PageProps) {
-  const [drawer, setDrawer] = createSignal<SyncJob | 'new'>();
+function CompletedTransfers(props: Pick<PageProps, 'store'>) {
   const stats = () => props.store.snapshot()?.stats;
-  const jobs = () => props.store.settings().jobs;
   const completedSource = createMemo(() => stats() ? `${stats()?.transfers}:${stats()?.checks}:${stats()?.errors}` : false);
-  const [completed] = createResource(completedSource, async () => {
+  const [completed, { refetch }] = createResource(completedSource, async () => {
     try {
       return { items: await window.api.completedTransfers(), error: '' };
     } catch (cause) {
       return { items: [], error: errorMessage(cause) };
     }
+  });
+  return (
+    <>
+      <Show when={completed()?.error}>{(error) => <div class="banner error" role="alert">{error()} <button type="button" class="button" disabled={completed.loading} onClick={() => void refetch()}>Retry</button></div>}</Show>
+      <For each={completed()?.items} fallback={<Empty>{completed.loading ? 'Loading history…' : 'No completed transfers.'}</Empty>}>{(item) => (
+        <div class="compact-ledger"><strong class="path">{item.name}</strong>
+          <span class="secondary numeric">{item.failed ? 'Failed / ' : ''}{formatBytes(item.bytes)} / {formatTime(item.completedAt)}</span></div>
+      )}</For>
+    </>
+  );
+}
+
+export function Transfers(props: PageProps) {
+  const [drawer, setDrawer] = createSignal<SyncJob | 'new'>();
+  const stats = () => props.store.snapshot()?.stats;
+  const jobs = () => props.store.settings().jobs;
+  const historySession = createMemo(() => {
+    const daemon = props.store.snapshot()?.daemon;
+    return daemon?.state === 'running' && stats() ? JSON.stringify([daemon.endpoint, daemon.pid]) : false;
   });
 
   return (
@@ -127,12 +158,8 @@ export function Transfers(props: PageProps) {
       <div class="history-split">
         <section class="panel">
           <SectionHeader title="Recent completed transfers" />
-          <Show when={stats()} fallback={<Empty>Connect to rclone to view completed transfers.</Empty>}>
-            <Show when={completed()?.error}>{(error) => <p class="banner error" role="alert">{error()}</p>}</Show>
-            <For each={completed()?.items} fallback={<Empty>{completed.loading ? 'Loading history…' : 'No completed transfers.'}</Empty>}>{(item) => (
-              <div class="compact-ledger"><strong class="path">{item.name}</strong>
-                <span class="secondary numeric">{item.failed ? 'Failed / ' : ''}{formatBytes(item.bytes)} / {formatTime(item.completedAt)}</span></div>
-            )}</For>
+          <Show when={historySession()} keyed fallback={<Empty>Connect to rclone to view completed transfers.</Empty>}>
+            <CompletedTransfers store={props.store} />
           </Show>
         </section>
         <section class="panel">

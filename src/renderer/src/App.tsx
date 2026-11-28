@@ -88,7 +88,7 @@ export function App() {
       <div class="shell-body">
         <Sidebar page={page()} collapsed={collapsed()} daemon={store.snapshot()?.daemon} prereqs={store.snapshot()?.prereqs}
           build={store.build()} mounts={store.snapshot()?.mounts.length ?? 0}
-          jobs={store.snapshot()?.jobRuns.filter((run) => run.state === 'running').length ?? 0} navigate={navigate}
+          jobs={store.snapshot()?.jobRuns.filter((run) => run.finishedAt === null).length ?? 0} navigate={navigate}
           openAbout={() => openSettings('About')} toggle={toggle} />
         <main class="page" ref={scroller} tabindex="-1" aria-label={page()}
           onScroll={rememberScroll}>
